@@ -1,0 +1,16 @@
+services:
+  mc-stuff:
+    build:
+      context: .
+    container_name: mc-stuff
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "5700"
+    networks:
+      - mc-stuff-net
+
+networks:
+  mc-stuff-net:
+    driver: bridge
