@@ -150,7 +150,7 @@ CLAUDE_PROJECTS_BASE = os.getenv("CLAUDE_PROJECTS_BASE", "/opt/projects")
 # Whitelist canónica no backend — só estes projetos são aceites.
 _DEFAULT_CLAUDE_PROJECTS = [
     "vantage", "coreroom", "gap-advisor", "ha-dashboard", "mc-stuff",
-    "mikecockpit", "mikecommand", "obsidian", "openclaw", "shared", "tradeagent",
+    "mikecockpit", "mikecommand", "memorix", "obsidian", "openclaw", "shared", "tradeagent",
 ]
 
 
