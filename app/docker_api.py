@@ -138,6 +138,25 @@ async def inspect(cid: str) -> dict:
     }
 
 
+async def remove_container(cid: str) -> dict:
+    """Remove um container. NÃO remove volumes (dados ficam). Recusa se estiver a correr."""
+    if not _socket_exists():
+        return {"ok": False, "error": "docker.sock indisponível"}
+    try:
+        async with _client() as c:
+            r = await c.request("DELETE", f"/containers/{cid}",
+                                 params={"v": "false", "force": "false", "link": "false"})
+            if r.status_code == 204:
+                return {"ok": True, "id": cid}
+            if r.status_code == 409:
+                return {"ok": False, "error": "O container está a correr — pára-o primeiro."}
+            if r.status_code == 404:
+                return {"ok": False, "error": "Container já não existe."}
+            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+    except (httpx.HTTPError, OSError) as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def container_stats(cid: str) -> dict:
     """Snapshot único de CPU%/RAM de um container (stream=false → já traz precpu)."""
     if not _socket_exists():

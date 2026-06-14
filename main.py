@@ -85,6 +85,23 @@ async def api_containers():
     return await docker_api.list_containers()
 
 
+# /remove ANTES da rota genérica /{action} (senão era apanhada por ela)
+@app.post("/api/containers/{cid}/remove")
+async def api_container_remove(cid: str, confirm: str = Query("")):
+    """Remove um container PARADO. Guardas: nome tem de bater certo + não pode estar a correr."""
+    info = await docker_api.inspect(cid)
+    if not info.get("ok"):
+        return JSONResponse(info, status_code=400)
+    if confirm != info["name"]:
+        return JSONResponse(
+            {"ok": False, "error": f"Confirmação inválida (escreve '{info['name']}')."}, status_code=400)
+    if info.get("running"):
+        return JSONResponse(
+            {"ok": False, "error": "O container está a correr — pára-o primeiro."}, status_code=400)
+    res = await docker_api.remove_container(cid)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
 @app.post("/api/containers/{cid}/{action}")
 async def api_container_action(cid: str, action: str):
     res = await docker_api.container_action(cid, action)

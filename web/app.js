@@ -137,7 +137,9 @@ window.openContainer = function (ct) {
       `<button class="btn ${k}" style="flex:1" onclick="containerAction('${ct.id}','${a}',this)">${l}</button>`).join('')}</div>
     <button class="btn block" style="margin-top:10px" onclick="loadLogs('${ct.id}',this)">📜 Ver logs</button>
     ${ct.compose_workdir ? `<div class="dim mono" style="font-size:11.5px;margin-top:14px">📁 ${esc(ct.compose_workdir)}</div>` : ''}
-    <div id="logArea" style="margin-top:12px"></div>`);
+    <div id="logArea" style="margin-top:12px"></div>
+    ${ct.state !== 'running' ? `<div id="rmZone" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <button class="btn danger block" onclick="confirmRemove('${ct.id}','${esc(ct.name)}',this)">🗑️ Remover container</button></div>` : ''}`);
   loadHelper(ct.id);
   if (ct.state === 'running') loadStats(ct.id);
 };
@@ -167,6 +169,27 @@ window.loadHelper = async function (id) {
   } catch { $('#ctHelper').innerHTML = ''; }
 };
 const mdBold = (s) => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+window.confirmRemove = function (id, name, btn) {
+  // 1ª confirmação: revela a zona de perigo com input para escrever o nome (2ª confirmação)
+  const zone = document.getElementById('rmZone');
+  zone.innerHTML = `<div class="card" style="border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.06)">
+    <div style="color:var(--crit);font-weight:680;margin-bottom:6px">⚠️ Remover definitivamente</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:10px">Remove o container <b class="mono">${esc(name)}</b>. Os volumes/dados ficam, mas o container desaparece e não há volta. Escreve <b class="mono">${esc(name)}</b> para confirmar:</div>
+    <input id="rmInput" class="logbox" style="width:100%;font-size:14px;padding:11px" placeholder="${esc(name)}" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn" style="flex:1" onclick="closeSheet()">Cancelar</button>
+      <button class="btn danger" style="flex:1" onclick="doRemove('${id}','${esc(name)}',this)">Remover</button>
+    </div></div>`;
+  $('#rmInput').focus();
+};
+window.doRemove = async function (id, name, btn) {
+  if ($('#rmInput').value.trim() !== name) { toast('O nome não corresponde', 'err'); return; }
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await api(`/containers/${id}/remove?confirm=${encodeURIComponent(name)}`, { method: 'POST' });
+    toast(`${name} removido`, 'ok'); closeSheet(); setTimeout(renderDocker, 500);
+  } catch (e) { toast(e.message, 'err'); btn.disabled = false; btn.textContent = 'Remover'; }
+};
 window.loadStats = async function (id) {
   try {
     const s = await api(`/containers/${id}/stats`);
