@@ -168,7 +168,38 @@ async function renderSystem() {
       <div><div style="font-weight:680;font-size:16px">${esc(h.server_name)}</div><div class="dim" style="font-size:12.5px">${esc(h.os)}</div></div></div>
     ${kv('CPU', h.cpu_model)}${kv('Núcleos', h.cores)}${kv('RAM', fmtBytes(h.ram_total))}
     ${kv('Kernel', h.kernel)}${kv('Arquitetura', h.arch)}${kv('Tailscale', h.tailscale_host)}</div>`;
-  renderProcs(procSort);
+  renderTailscale(); renderBackups(); renderProcs(procSort);
+}
+async function renderTailscale() {
+  const el = $('#tailscaleCard');
+  try {
+    const t = await api('/tailscale');
+    if (!t.available) { el.innerHTML = `<div class="card"><div class="dim">${esc(t.error || 'indisponível')}</div></div>`; return; }
+    const ok = t.state === 'Running';
+    const devices = t.devices.map(d => `<div class="row between" style="padding:6px 0;border-top:1px solid var(--line)">
+      <div class="row" style="gap:9px"><span class="dot ${d.online ? 'ok' : 'exited'}"></span><span style="font-size:13.5px">${esc(d.name)}</span><span class="dim" style="font-size:11px">${esc(d.os)}</span></div>
+      <span class="mono dim" style="font-size:11px">${esc(d.ip)}</span></div>`).join('');
+    el.innerHTML = `<div class="card">
+      <div class="row between"><div class="row" style="gap:9px"><span class="dot ${ok ? 'ok' : 'crit'}"></span><span style="font-weight:650">${esc(t.state)}</span></div>
+        <span class="pill ${ok ? 'ok' : 'crit'}">${t.peers_online}/${t.peers_total} online</span></div>
+      ${kv('Este host', t.hostname + ' · ' + t.ip)}${t.key_expiry ? kv('Chave expira', new Date(t.key_expiry).toLocaleDateString('pt-PT')) : ''}
+      <div class="dim" style="font-size:11.5px;margin:10px 0 2px">Dispositivos na tailnet</div>${devices}</div>`;
+  } catch (e) { el.innerHTML = `<div class="card"><div class="dim">${esc(e.message)}</div></div>`; }
+}
+async function renderBackups() {
+  const el = $('#backupsCard');
+  try {
+    const b = await api('/backups');
+    if (!b.available) { el.innerHTML = `<div class="card"><div class="dim">${esc(b.error || 'indisponível')}</div></div>`; return; }
+    el.innerHTML = b.repos.map(r => {
+      const unsaved = r.ahead > 0 || r.dirty > 0;
+      const pill = !r.ok ? '<span class="pill crit">sem git</span>'
+        : unsaved ? `<span class="pill warn">${r.ahead} por enviar${r.dirty ? ' · ' + r.dirty + ' alt.' : ''}</span>`
+        : '<span class="pill ok">sincronizado</span>';
+      return `<div class="card" style="margin-bottom:8px"><div class="row between"><span style="font-weight:640">${esc(r.name)}</span>${pill}</div>
+        ${r.last ? `<div class="dim" style="font-size:12.5px;margin-top:6px">${esc(r.last.when)} · <span class="mono">${esc(r.last.hash)}</span> ${esc(r.last.msg)}</div>` : '<div class="dim" style="font-size:12.5px;margin-top:6px">sem commits</div>'}</div>`;
+    }).join('');
+  } catch (e) { el.innerHTML = `<div class="card"><div class="dim">${esc(e.message)}</div></div>`; }
 }
 const kv = (k, v) => `<div class="row between" style="padding:7px 0;border-top:1px solid var(--line)"><span class="dim" style="font-size:13px">${k}</span><span class="mono" style="font-size:12.5px;text-align:right;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v)}</span></div>`;
 let procSort = 'cpu';
@@ -177,11 +208,30 @@ async function renderProcs(sort) {
   $('#procCpu').className = 'btn' + (sort === 'cpu' ? ' primary' : ''); $('#procCpu').style.flex = '1';
   $('#procMem').className = 'btn' + (sort === 'mem' ? ' primary' : ''); $('#procMem').style.flex = '1';
   const d = await api(`/processes?sort=${sort}&limit=18`);
-  $('#procList').innerHTML = d.processes.map(p => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
+  $('#procList').innerHTML = d.processes.map(p => `<button class="row between" style="padding:8px 0;border-top:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-bottom:0;color:inherit;text-align:left" onclick='openProc(${JSON.stringify(p).replace(/'/g, "&#39;")})'>
     <div class="grow" style="min-width:0"><div class="name" style="font-size:13.5px">${esc(p.name)}</div>
       <div class="meta">${esc(p.user)} · pid ${p.pid}</div></div>
-    <span class="mono" style="font-size:13px;color:${sort === 'cpu' ? colorFor(p.cpu) : 'var(--info)'}">${sort === 'cpu' ? p.cpu + '%' : p.mem + '%'}</span></div>`).join('');
+    <span class="mono" style="font-size:13px;color:${sort === 'cpu' ? colorFor(p.cpu) : 'var(--info)'}">${sort === 'cpu' ? p.cpu + '%' : p.mem + '%'}</span>
+    <span class="chev">›</span></button>`).join('');
 }
+window.openProc = function (p) {
+  openSheet(`<h2>${esc(p.name)}</h2>
+    <div class="dim mono" style="font-size:12px;margin-bottom:10px">pid ${p.pid} · ${esc(p.user)}</div>
+    <div class="grid grid-2" style="margin-bottom:12px">
+      <div class="card" style="padding:11px"><div class="kpi-label">CPU</div><div class="kpi-value" style="font-size:19px;color:${colorFor(p.cpu)}">${p.cpu}<span class="unit">%</span></div></div>
+      <div class="card" style="padding:11px"><div class="kpi-label">RAM</div><div class="kpi-value" style="font-size:19px;color:var(--info)">${p.mem}<span class="unit">%</span></div></div></div>
+    <div class="logbox" style="margin-bottom:14px;max-height:120px">${esc(p.cmd)}</div>
+    <div class="btn-row">
+      <button class="btn danger" style="flex:1" onclick="killProc(${p.pid},'term',this)">⏹ Terminar (SIGTERM)</button>
+      <button class="btn danger" style="flex:1" onclick="killProc(${p.pid},'kill',this)">💀 Forçar (SIGKILL)</button>
+    </div>
+    <div class="dim" style="font-size:11.5px;margin-top:10px;text-align:center">SIGTERM pede para fechar; SIGKILL mata à força.</div>`);
+};
+window.killProc = async function (pid, sig, btn) {
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '…';
+  try { const r = await api(`/processes/${pid}/kill?sig=${sig}`, { method: 'POST' }); toast(`${r.name || 'pid ' + pid} terminado`, 'ok'); closeSheet(); setTimeout(() => renderProcs(procSort), 700); }
+  catch (e) { toast(e.message, 'err'); btn.disabled = false; btn.textContent = old; }
+};
 
 window.confirmReboot = function () {
   openSheet(`<h2 style="color:var(--crit)">⏻ Reiniciar a VM</h2>

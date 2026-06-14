@@ -12,7 +12,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import actions, alerts, config, docker_api, ports, system, telegram
+from app import actions, alerts, config, docker_api, infra, ports, system, telegram
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -58,6 +58,23 @@ async def api_host():
 @app.get("/api/processes")
 async def api_processes(sort: str = Query("cpu", pattern="^(cpu|mem)$"), limit: int = 25):
     return {"processes": system.processes(limit=min(limit, 100), sort_by=sort)}
+
+
+@app.post("/api/processes/{pid}/kill")
+async def api_kill_process(pid: int, sig: str = Query("term", pattern="^(term|kill)$")):
+    res = actions.kill_process(pid, sig)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+# ── Tailscale & backups (infra) ──────────────────────────────────────────────
+@app.get("/api/tailscale")
+async def api_tailscale():
+    return await infra.tailscale_status()
+
+
+@app.get("/api/backups")
+async def api_backups():
+    return await infra.backups_status()
 
 
 # ── Containers ───────────────────────────────────────────────────────────────

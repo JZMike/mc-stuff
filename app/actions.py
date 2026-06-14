@@ -6,8 +6,12 @@ disponível (ex.: sandbox), devolve um erro claro em vez de rebentar.
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
+import signal
 from pathlib import Path
+
+import psutil
 
 from . import config
 
@@ -58,6 +62,34 @@ async def run_allowed(command_id: str) -> dict:
             res["label"] = c["label"]
             return res
     return {"ok": False, "error": "comando não está na allowlist"}
+
+
+_PROTECTED_PIDS = {0, 1}  # init/kernel — nunca matar
+
+
+def kill_process(pid: int, sig: str = "term") -> dict:
+    """Mata um processo do host por PID. Com pid:host, atinge processos reais.
+
+    sig: 'term' (SIGTERM, gracioso) ou 'kill' (SIGKILL, forçado).
+    """
+    if pid in _PROTECTED_PIDS or pid < 0:
+        return {"ok": False, "error": f"PID {pid} é protegido."}
+    if pid == os.getpid():
+        return {"ok": False, "error": "não posso matar o próprio MikeCockpit."}
+    sigval = signal.SIGKILL if sig == "kill" else signal.SIGTERM
+    try:
+        name = psutil.Process(pid).name()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        name = "?"
+    try:
+        os.kill(pid, sigval)
+        return {"ok": True, "pid": pid, "name": name, "signal": sig}
+    except ProcessLookupError:
+        return {"ok": False, "error": f"PID {pid} já não existe."}
+    except PermissionError:
+        return {"ok": False, "error": "sem permissão (precisa de privileged + pid:host)."}
+    except OSError as e:
+        return {"ok": False, "error": str(e)}
 
 
 async def reboot_vm() -> dict:
