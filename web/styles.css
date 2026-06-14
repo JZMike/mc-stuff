@@ -74,6 +74,7 @@ main { padding: 16px 16px calc(var(--nav-h) + var(--safe-b) + 24px); max-width: 
 }
 .grid { display: grid; gap: 12px; }
 .grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: 1fr 1fr 1fr; }
 .row { display: flex; align-items: center; gap: 12px; }
 .between { justify-content: space-between; }
 .muted { color: var(--mut); } .dim { color: var(--dim); }
@@ -89,8 +90,8 @@ main { padding: 16px 16px calc(var(--nav-h) + var(--safe-b) + 24px); max-width: 
 .gauge .center { position: absolute; text-align: center; }
 .gauge .center .v { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
 .gauge .center .l { font-size: 11px; color: var(--mut); margin-top: 4px; text-transform: uppercase; letter-spacing: .06em; }
-.gauge-card { padding: 14px 12px; display: grid; place-items: center; gap: 8px; }
-.gauge-card .meta { font-size: 11px; color: var(--dim); }
+.gauge-card { padding: 12px 5px; display: grid; place-items: center; gap: 7px; }
+.gauge-card .meta { font-size: 10.5px; color: var(--dim); text-align: center; white-space: nowrap; }
 
 /* ── Barras (per-core, mem) ──────────────────────────────────────────────── */
 .bar { height: 7px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; }

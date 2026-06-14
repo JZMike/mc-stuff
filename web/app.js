@@ -26,7 +26,6 @@ const fmtAgo = (ts) => {
   if (s < 86400) return Math.floor(s / 3600) + 'h'; return Math.floor(s / 86400) + 'd';
 };
 const colorFor = (pct) => pct >= 90 ? 'var(--crit)' : pct >= 75 ? 'var(--warn)' : 'var(--accent)';
-const tempColor = (c) => c == null ? 'var(--dim)' : c >= 80 ? 'var(--crit)' : c >= 65 ? 'var(--warn)' : 'var(--accent)';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ── Toast ────────────────────────────────────────────────────────────────────
@@ -36,72 +35,88 @@ function toast(msg, kind = '') {
   clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', 2600);
 }
 
-// ── Gauge SVG ────────────────────────────────────────────────────────────────
-function gauge({ value, label, sub, color, max = 100, suffix = '%' }) {
-  const R = 42, C = 2 * Math.PI * R;
+// ── Gauge SVG (size ajustável p/ 3-up) ───────────────────────────────────────
+function gauge({ value, label, sub, color, max = 100, suffix = '%', size = 104 }) {
+  const sw = Math.max(6, Math.round(size * 0.085));
+  const R = (size - sw) / 2 - 2;
+  const c = size / 2, C = 2 * Math.PI * R;
   const pct = Math.max(0, Math.min(1, (value ?? 0) / max));
   const off = C * (1 - pct);
   const display = value == null ? '—' : (Number.isInteger(value) ? value : value.toFixed(1));
+  const vf = Math.round(size * 0.25);
   return `<div class="card gauge-card">
     <div class="gauge">
-      <svg width="104" height="104" viewBox="0 0 104 104">
-        <circle class="ring-bg" cx="52" cy="52" r="${R}" fill="none" stroke-width="9"></circle>
-        <circle class="ring-fg" cx="52" cy="52" r="${R}" fill="none" stroke-width="9"
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <circle class="ring-bg" cx="${c}" cy="${c}" r="${R}" fill="none" stroke-width="${sw}"></circle>
+        <circle class="ring-fg" cx="${c}" cy="${c}" r="${R}" fill="none" stroke-width="${sw}"
           stroke="${color}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
       </svg>
-      <div class="center"><div class="v">${display}<span style="font-size:13px;color:var(--dim)">${value == null ? '' : suffix}</span></div><div class="l">${label}</div></div>
+      <div class="center"><div class="v" style="font-size:${vf}px">${display}<span style="font-size:${Math.round(vf * 0.5)}px;color:var(--dim)">${value == null ? '' : suffix}</span></div><div class="l">${label}</div></div>
     </div>
-    <div class="meta">${sub || ''}</div>
+    ${sub ? `<div class="meta">${sub}</div>` : ''}
   </div>`;
 }
 
-// ── Sparkline ────────────────────────────────────────────────────────────────
-const hist = { cpu: [], mem: [] };
-function pushHist(k, v) { hist[k].push(v); if (hist[k].length > 40) hist[k].shift(); }
-function sparkline(data, color = 'var(--accent)') {
-  if (data.length < 2) return '';
-  const w = 300, h = 38, max = 100;
-  const step = w / (data.length - 1);
-  const pts = data.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`);
-  const area = `0,${h} ` + pts.join(' ') + ` ${w},${h}`;
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-    <polygon class="area" points="${area}"></polygon>
-    <polyline points="${pts.join(' ')}" style="stroke:${color}"></polyline></svg>`;
+// ── Carga traduzida (load vs nº de cores) ────────────────────────────────────
+function loadHealth(load, cores) {
+  const r = load / (cores || 1);
+  if (r < 0.7) return ['folgado', 'var(--ok)'];
+  if (r < 1.0) return ['ocupado', 'var(--warn)'];
+  return ['sobrecarga', 'var(--crit)'];
 }
 
+
 // ══ VISÃO ════════════════════════════════════════════════════════════════════
+const _aux = { t: 0, containers: null, alerts: null, apps: null };
+const _gb = (b) => (b / 1e9).toFixed(b >= 1e10 ? 0 : 1);
+const fact = (l, v) => `<div><div class="kpi-label">${l}</div><div style="font-weight:650;font-size:14px;margin-top:3px">${v}</div></div>`;
+
 async function renderOverview() {
   const d = await api('/overview');
-  const cpu = d.cpu.percent, mem = d.memory.percent, disk = d.disk.percent, temp = d.temperature.main_c;
-  pushHist('cpu', cpu); pushHist('mem', mem);
+  const cpu = d.cpu.percent, mem = d.memory.percent, disk = d.disk.percent;
 
   $('#gauges').innerHTML =
-    gauge({ value: cpu, label: 'CPU', sub: `${d.cpu.cores} cores · load ${d.cpu.load[0]}`, color: colorFor(cpu) }) +
-    gauge({ value: mem, label: 'RAM', sub: `${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`, color: colorFor(mem) }) +
-    gauge({ value: temp, label: 'Temp', sub: temp == null ? 'sem sensor' : 'CPU', color: tempColor(temp), max: 100, suffix: '°' }) +
-    gauge({ value: disk, label: 'Disco', sub: `${fmtBytes(d.disk.free)} livres`, color: colorFor(disk) });
+    gauge({ value: cpu, label: 'CPU', sub: `${d.cpu.cores} cores`, color: colorFor(cpu), size: 84 }) +
+    gauge({ value: mem, label: 'RAM', sub: `${_gb(d.memory.used)}/${_gb(d.memory.total)}G`, color: colorFor(mem), size: 84 }) +
+    gauge({ value: disk, label: 'Disco', sub: `${_gb(d.disk.free)}G livres`, color: colorFor(disk), size: 84 });
 
-  const cores = d.cpu.per_cpu.map((c, i) =>
-    `<div class="core"><div class="bar"><span style="width:${c}%;background:${colorFor(c)}"></span></div>${i}</div>`).join('');
-
-  $('#overviewExtra').innerHTML = `
-    <div class="card">
-      <div class="row between"><span class="kpi-label">Atividade CPU</span><span class="mono dim" style="font-size:12px">${cpu}%</span></div>
-      ${sparkline(hist.cpu)}
-      <div class="row between" style="margin-top:6px"><span class="kpi-label">Memória</span><span class="mono dim" style="font-size:12px">${mem}%</span></div>
-      ${sparkline(hist.mem, 'var(--info)')}
-    </div>
-    <div class="card">
-      <div class="kpi-label" style="margin-bottom:10px">Núcleos</div>
-      <div class="cores">${cores}</div>
-    </div>
-    <div class="grid grid-2">
-      <div class="card"><div class="kpi-label">Uptime</div><div class="kpi-value">${fmtUptime(d.uptime_seconds)}</div></div>
-      <div class="card"><div class="kpi-label">Load (1·5·15)</div><div class="kpi-value" style="font-size:17px">${d.cpu.load.join(' · ')}</div></div>
-      <div class="card"><div class="kpi-label">Rede ↓</div><div class="kpi-value" style="font-size:17px">${fmtBytes(d.network.bytes_recv)}</div></div>
-      <div class="card"><div class="kpi-label">Rede ↑</div><div class="kpi-value" style="font-size:17px">${fmtBytes(d.network.bytes_sent)}</div></div>
-    </div>`;
+  // dados auxiliares (containers/alertas/apps) — puxados com menos frequência (leve no N97)
+  if (Date.now() - _aux.t > 11000) {
+    _aux.t = Date.now();
+    Promise.all([api('/containers').catch(() => null), api('/alerts').catch(() => null), api('/apps').catch(() => null)])
+      .then(([c, a, ap]) => { _aux.containers = c; _aux.alerts = a; _aux.apps = ap; if (current === 'overview') drawHome(d); });
+  }
+  drawHome(d);
   markSync();
+}
+
+function drawHome(d) {
+  // ── Precisa de atenção (mini-briefing) ──
+  const hist = (_aux.alerts && _aux.alerts.history) ? _aux.alerts.history.slice(0, 4) : [];
+  $('#attention').innerHTML = `<div class="view-title" style="margin:0 2px 8px">Precisa de atenção</div>` +
+    (hist.length
+      ? `<div class="list">` + hist.map(a => `<div class="item">
+          <span class="dot ${a.level === 'critical' ? 'crit' : a.level === 'warning' ? 'warn' : 'ok'}"></span>
+          <div class="grow"><div class="name" style="font-size:13.5px">${esc(a.title)}</div>
+            <div class="meta">${esc((a.body || '').replace(/<[^>]+>/g, ''))}</div></div>
+          <span class="dim" style="font-size:11px">${fmtAgo(a.ts)}</span></div>`).join('') + `</div>`
+      : `<div class="card"><div class="row" style="gap:10px"><span class="dot ok"></span><span class="muted">Tudo calmo — nada a precisar de ti.</span></div></div>`);
+
+  // ── Faixa de factos ──
+  const [lw, lc] = loadHealth(d.cpu.load[2], d.cpu.cores);
+  let cRun = '—', cStop = '—';
+  if (_aux.containers && _aux.containers.available) {
+    const cs = _aux.containers.containers;
+    cRun = cs.filter(x => x.state === 'running').length;
+    cStop = cs.length - cRun;
+  }
+  const appsN = _aux.apps ? _aux.apps.apps.filter(a => a.state === 'running' || a.state === 'listen').length : '—';
+  $('#facts').innerHTML = `<div class="card" style="padding:14px"><div class="grid grid-2" style="gap:14px">
+    ${fact('Uptime', fmtUptime(d.uptime_seconds))}
+    ${fact('Carga', `<span style="color:${lc}">${lw}</span> · ${d.cpu.load[2]}/${d.cpu.cores}`)}
+    ${fact('Containers', `${cRun} <span class="dim">a correr</span> · ${cStop} <span class="dim">parados</span>`)}
+    ${fact('Apps', `${appsN} <span class="dim">online</span>`)}
+  </div></div>`;
 }
 
 // ══ DOCKER ═══════════════════════════════════════════════════════════════════
