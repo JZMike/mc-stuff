@@ -34,7 +34,7 @@ def _float(name: str, default: float) -> float:
 # ── Identidade ───────────────────────────────────────────────────────────────
 APP_NAME = os.getenv("APP_NAME", "MikeCockpit")
 SERVER_NAME = os.getenv("SERVER_NAME", "MikeServer")
-PORT = _int("PORT", 5700)
+PORT = _int("PORT", 5599)
 
 # ── Acesso ao host ───────────────────────────────────────────────────────────
 # Se / estiver montado em /host, usamos isso para o disco e SO do host.
@@ -118,7 +118,7 @@ TAILSCALE_HOST = os.getenv("TAILSCALE_HOST", "mikeserver.tail228d40.ts.net")
 # Apps conhecidas (nome amigável + ícone) por porta — enriquece o auto-discovery.
 # Override via env KNOWN_APPS_JSON.
 _DEFAULT_KNOWN_APPS = {
-    "5700": {"name": "MikeCockpit", "icon": "🎛️", "path": "/opt/projects/mikecockpit"},
+    "5599": {"name": "MikeCockpit", "icon": "🎛️", "path": "/opt/projects/mikecockpit"},
     "4000": {"name": "CoreRoom", "icon": "🧩", "path": "/opt/projects/coreroom"},
     "9000": {"name": "Portainer", "icon": "🐳", "path": "portainer"},
     "3001": {"name": "Homepage", "icon": "🏁", "path": "homepage"},

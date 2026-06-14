@@ -3,7 +3,7 @@
 Painel de comando e telemetria do **MikeServer** (N97 · Proxmox → Debian → Docker).
 Não é só leitura — **agir** à distância a partir do telemóvel, via Tailscale, como PWA instalável.
 
-- **Porta**: `5700` · **URL**: `https://mikeserver.tail228d40.ts.net:5700`
+- **Porta**: `5599` · **URL**: `https://mikeserver.tail228d40.ts.net:5599`
 - **Stack**: Python 3.12 + FastAPI + PWA vanilla (zero-build) — leve por design para o N97.
 - **Acesso**: privado, só via Tailscale (sem auth, conforme decidido — confia-se na tailnet).
 
@@ -33,11 +33,11 @@ cd mikecockpit
 cp .env.example .env        # preenche TELEGRAM_* para teres push
 ./deploy.sh                 # build + up + health + tailscale serve
 ```
-Abre `https://mikeserver.tail228d40.ts.net:5700` no telemóvel → **Adicionar ao ecrã principal** = PWA.
+Abre `https://mikeserver.tail228d40.ts.net:5599` no telemóvel → **Adicionar ao ecrã principal** = PWA.
 
 ## Health
 ```bash
-curl http://localhost:5700/health
+curl http://localhost:5599/health
 ```
 
 ## Notas de arquitetura

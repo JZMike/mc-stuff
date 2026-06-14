@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 5700
-# Liga só ao loopback: o `tailscale serve` faz a ponte tailnet:5700 -> 127.0.0.1:5700.
-# (com network_mode:host, 0.0.0.0 colidiria com o tailscaled que já tem a tailnet:5700)
-CMD ["uvicorn", "main:app", "--host", "127.0.0.1", "--port", "5700"]
+EXPOSE 5599
+# Liga só ao loopback na porta do .env (default 5599); o `tailscale serve` faz a ponte
+# tailnet:PORT -> 127.0.0.1:PORT. (com network_mode:host, 0.0.0.0 colidiria com o tailscaled.)
+CMD ["sh", "-c", "exec uvicorn main:app --host 127.0.0.1 --port ${PORT:-5599}"]
