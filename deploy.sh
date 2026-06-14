@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# MikeCommand — deploy idempotente no MikeServer.
-# Uso (no MikeServer):  cd /opt/stacks/mikecommand && ./deploy.sh
+# MikeCockpit — deploy idempotente no MikeServer.
+# Uso (no MikeServer):  cd /opt/projects/mikecockpit && ./deploy.sh
 set -euo pipefail
 
 STACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$STACK_DIR"
 
-echo "▶ MikeCommand — deploy em $STACK_DIR"
+echo "▶ MikeCockpit — deploy em $STACK_DIR"
 
 # 1) .env
 if [ ! -f .env ]; then

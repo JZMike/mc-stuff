@@ -1,4 +1,4 @@
-# MikeCommand 🎛️
+# MikeCockpit 🎛️
 
 Painel de comando e telemetria do **MikeServer** (N97 · Proxmox → Debian → Docker).
 Não é só leitura — **agir** à distância a partir do telemóvel, via Tailscale, como PWA instalável.
@@ -24,9 +24,9 @@ ou quando um container cai. Configura `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` 
 ## Deploy (no MikeServer)
 ```bash
 # 1. clonar para a pasta de stacks
-sudo mkdir -p /opt/stacks && cd /opt/stacks
-git clone https://github.com/JZMike/mc-stuff.git mikecommand
-cd mikecommand
+cd /opt/projects
+git clone https://github.com/JZMike/mc-stuff.git mikecockpit
+cd mikecockpit
 
 # 2. configurar e subir
 cp .env.example .env        # preenche TELEGRAM_* para teres push

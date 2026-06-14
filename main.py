@@ -1,4 +1,4 @@
-"""MikeCommand — API + PWA para comandar o MikeServer.
+"""MikeCockpit — API + PWA para comandar o MikeServer.
 
 Leve por design (N97): FastAPI single-process, polling do lado do cliente,
 sem dependências pesadas. Serve a PWA estática em / e a API em /api.
@@ -123,7 +123,7 @@ async def api_alerts():
 @app.post("/api/alerts/test")
 async def api_alerts_test():
     res = await telegram.send(
-        f"🎛️ <b>{config.SERVER_NAME} · MikeCommand</b>\nTeste de notificação — está tudo a funcionar. ✅"
+        f"🎛️ <b>{config.SERVER_NAME} · {config.APP_NAME}</b>\nTeste de notificação — está tudo a funcionar. ✅"
     )
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 

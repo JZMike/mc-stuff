@@ -1,6 +1,6 @@
 {
-  "name": "MikeCommand",
-  "short_name": "MikeCmd",
+  "name": "MikeCockpit",
+  "short_name": "MikeCockpit",
   "description": "Comando e telemetria do MikeServer",
   "start_url": "./",
   "scope": "./",

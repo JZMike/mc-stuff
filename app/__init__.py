@@ -1,1 +1,1 @@
-"""MikeCommand — painel de controlo do MikeServer."""
+"""MikeCockpit — painel de controlo do MikeServer."""

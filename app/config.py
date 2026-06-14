@@ -32,7 +32,7 @@ def _float(name: str, default: float) -> float:
 
 
 # ── Identidade ───────────────────────────────────────────────────────────────
-APP_NAME = os.getenv("APP_NAME", "MikeCommand")
+APP_NAME = os.getenv("APP_NAME", "MikeCockpit")
 SERVER_NAME = os.getenv("SERVER_NAME", "MikeServer")
 PORT = _int("PORT", 5700)
 
@@ -122,7 +122,7 @@ _DEFAULT_KNOWN_APPS = {
     "9000": {"name": "Portainer", "icon": "🐳", "path": "portainer"},
     "3001": {"name": "Uptime Kuma", "icon": "📈", "path": "uptime-kuma"},
     "8123": {"name": "Home Assistant", "icon": "🏠", "path": "homeassistant"},
-    "5700": {"name": "MikeCommand", "icon": "🎛️", "path": "/opt/stacks/mikecommand"},
+    "5700": {"name": "MikeCockpit", "icon": "🎛️", "path": "/opt/projects/mikecockpit"},
 }
 
 
