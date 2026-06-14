@@ -41,7 +41,8 @@
       <div class="grid grid-3" id="gauges"></div>
       <div id="attention" style="margin-top:16px"></div>
       <div id="facts" style="margin-top:12px"></div>
-      <button class="btn block" id="goApps" style="margin-top:14px;justify-content:space-between"><span>🔗 Apps & links Tailscale</span><span class="dim">abrir ›</span></button>
+      <button class="btn block" id="openMap" style="margin-top:14px;justify-content:space-between"><span>🌌 Mapa do servidor</span><span class="dim">explorar ›</span></button>
+      <button class="btn block" id="goApps" style="margin-top:10px;justify-content:space-between"><span>🔗 Apps & links Tailscale</span><span class="dim">abrir ›</span></button>
     </section>
 
     <!-- ░░ DOCKER ░░ -->
@@ -134,6 +135,27 @@
       <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>Alertas
     </button>
   </nav>
+
+  <!-- ░░ MAPA ORBITAL (ecrã inteiro) ░░ -->
+  <div class="mapview" id="mapView">
+    <div class="map-top">
+      <button class="map-btn" id="mapClose">✕</button>
+      <div>
+        <div class="map-title" id="mapTitle">MikeServer</div>
+        <div class="map-sub" id="mapSub">a carregar…</div>
+      </div>
+      <div class="map-legend">
+        <span><span class="d" style="background:var(--ok)"></span>ativo</span>
+        <span><span class="d" style="background:var(--crit)"></span>em baixo</span>
+      </div>
+    </div>
+    <svg id="mapSvg"></svg>
+    <div class="map-zoom">
+      <button class="map-btn" id="mapZoomIn">＋</button>
+      <button class="map-btn" id="mapZoomOut">－</button>
+      <button class="map-btn" id="mapReset">⟲</button>
+    </div>
+  </div>
 
   <div class="scrim" id="scrim"></div>
   <div class="sheet" id="sheet"></div>

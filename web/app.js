@@ -522,5 +522,137 @@ window.addEventListener('beforeinstallprompt', (e) => {
   $('#installX').onclick = () => { localStorage.setItem('mc_install_dismissed', '1'); $('#installBanner').innerHTML = ''; };
 });
 
+// ══ MAPA ORBITAL (átomo) ═════════════════════════════════════════════════════
+const mapState = { scale: 1, tx: 0, ty: 0 };
+let _mapVP = null;
+const shortName = (s) => { s = String(s || ''); return s.length > 15 ? s.slice(0, 14) + '…' : s; };
+
+async function openMap() {
+  $('#mapView').classList.add('open');
+  $('#mapSub').textContent = 'a carregar…';
+  try { renderMap(await api('/map')); }
+  catch (e) { $('#mapSub').textContent = 'erro: ' + e.message; }
+}
+function closeMap() { $('#mapView').classList.remove('open'); }
+
+function layoutNodes(nodes) {
+  const caps = [7, 13, 20, 28];
+  const positioned = []; const ringRadii = [];
+  let rem = nodes.length, ring = 0, n = 0;
+  while (rem > 0) {
+    const count = Math.min(caps[ring] ?? 32, rem);
+    const radius = 175 + ring * 145;
+    ringRadii.push(radius);
+    const offset = ring * 0.5;
+    for (let i = 0; i < count; i++) {
+      const ang = offset + (i / count) * Math.PI * 2;
+      positioned.push({ ...nodes[n++], x: Math.cos(ang) * radius, y: Math.sin(ang) * radius });
+    }
+    rem -= count; ring++;
+  }
+  return { positioned, ringRadii };
+}
+
+function applyMapTransform() {
+  const svg = $('#mapSvg');
+  const W = svg.clientWidth || innerWidth, H = svg.clientHeight || innerHeight;
+  if (_mapVP) _mapVP.setAttribute('transform',
+    `translate(${(W / 2 + mapState.tx).toFixed(1)} ${(H / 2 + mapState.ty).toFixed(1)}) scale(${mapState.scale.toFixed(3)})`);
+}
+
+function renderMap(d) {
+  const svg = $('#mapSvg');
+  const W = svg.clientWidth || innerWidth, H = svg.clientHeight || innerHeight;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const { positioned, ringRadii } = layoutNodes(d.nodes);
+
+  const stars = Array.from({ length: 70 }, () => {
+    const x = ((Math.random() * 2 - 1) * 1400).toFixed(0), y = ((Math.random() * 2 - 1) * 1400).toFixed(0);
+    const r = (Math.random() * 1.6 + .4).toFixed(1), dl = (Math.random() * 4).toFixed(1);
+    return `<circle class="star" cx="${x}" cy="${y}" r="${r}" style="animation-delay:${dl}s"></circle>`;
+  }).join('');
+  const orbits = ringRadii.map(r => `<circle class="orbit" cx="0" cy="0" r="${r}"></circle>`).join('');
+  const links = positioned.map(nd =>
+    `<line class="link ${nd.status}" x1="${nd.x.toFixed(1)}" y1="${nd.y.toFixed(1)}" x2="0" y2="0"></line>`).join('');
+  const nodes = positioned.map(nd => `
+    <g class="node ${nd.status}" data-url="${esc(nd.url)}" data-name="${esc(nd.name)}" data-port="${nd.port}" data-status="${nd.status}" transform="translate(${nd.x.toFixed(1)} ${nd.y.toFixed(1)})">
+      <circle class="halo ${nd.status}" r="26"></circle>
+      <circle class="ndot" r="16"></circle>
+      <text text-anchor="middle" dy="5.5" font-size="15">${nd.icon}</text>
+      <text class="lbl" text-anchor="middle" y="38" font-size="11">${esc(shortName(nd.name))}</text>
+      <text class="lbl" text-anchor="middle" y="51" font-size="9.5" style="fill:var(--dim)">:${nd.port}</text>
+    </g>`).join('');
+  const c = d.center;
+  const core = `<g class="core ${c.health}">
+      <circle class="core-halo" r="62"></circle>
+      <circle class="core-dot" r="42"></circle>
+      <text text-anchor="middle" dy="2" font-size="26">🎛️</text>
+      <text class="core-lbl" text-anchor="middle" y="64" font-size="13">${esc(c.name)}</text>
+    </g>`;
+
+  svg.innerHTML = `<g id="mapvp">${stars}${orbits}${links}${core}${nodes}</g>`;
+  _mapVP = $('#mapvp');
+  mapState.scale = 1; mapState.tx = 0; mapState.ty = 0;
+  applyMapTransform();
+  $('#mapTitle').textContent = c.name;
+  $('#mapSub').textContent = `${d.up}/${d.total} serviços ativos · CPU ${c.cpu}% · RAM ${c.mem}%`;
+}
+
+function tapNode(g) {
+  const url = g.getAttribute('data-url'), name = g.getAttribute('data-name');
+  const port = g.getAttribute('data-port'), st = g.getAttribute('data-status');
+  openSheet(`<h2>${esc(name)}</h2>
+    <div class="row" style="gap:9px;margin:6px 0 16px"><span class="dot ${st === 'up' ? 'ok' : 'crit'}"></span>
+      <span class="muted">${st === 'up' ? 'a correr' : 'em baixo'} · porta ${esc(port)}</span></div>
+    ${st === 'up'
+      ? `<a class="btn primary block" href="${esc(url)}" target="_blank" rel="noopener">↗ Abrir app</a>`
+      : `<div class="dim" style="font-size:13px">Serviço parado — vai à aba <b>Docker</b> para o reiniciar.</div>`}`);
+}
+
+(function mapGestures() {
+  const S = $('#mapSvg');
+  const pts = new Map();
+  let lastDist = 0, moved = 0, downT = 0, downTarget = null;
+  const dd = () => { const a = [...pts.values()]; return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); };
+  const mid = () => { const a = [...pts.values()]; return { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 }; };
+  function zoomBy(factor, focal) {
+    const rect = S.getBoundingClientRect(), W = rect.width, H = rect.height;
+    const fx = focal ? focal.x - rect.left : W / 2, fy = focal ? focal.y - rect.top : H / 2;
+    const s2 = Math.max(0.35, Math.min(4, mapState.scale * factor));
+    const wx = (fx - W / 2 - mapState.tx) / mapState.scale, wy = (fy - H / 2 - mapState.ty) / mapState.scale;
+    mapState.tx = fx - W / 2 - s2 * wx; mapState.ty = fy - H / 2 - s2 * wy; mapState.scale = s2;
+    applyMapTransform();
+  }
+  window._mapZoom = (f) => zoomBy(f, null);
+  S.addEventListener('pointerdown', (e) => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { moved = 0; downT = Date.now(); downTarget = e.target.closest('.node'); }
+    if (pts.size === 2) lastDist = dd();
+  });
+  S.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const prev = pts.get(e.pointerId), cur = { x: e.clientX, y: e.clientY };
+    pts.set(e.pointerId, cur);
+    if (pts.size === 1) {
+      const dx = cur.x - prev.x, dy = cur.y - prev.y; moved += Math.abs(dx) + Math.abs(dy);
+      mapState.tx += dx; mapState.ty += dy; applyMapTransform();
+    } else if (pts.size === 2) { const nd = dd(); if (lastDist > 0) zoomBy(nd / lastDist, mid()); lastDist = nd; }
+  });
+  function end(e) {
+    const tap = pts.size === 1 && moved < 10 && (Date.now() - downT) < 350 && downTarget;
+    pts.delete(e.pointerId); if (pts.size < 2) lastDist = 0;
+    if (tap) tapNode(downTarget);
+  }
+  S.addEventListener('pointerup', end);
+  S.addEventListener('pointercancel', end);
+  S.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.12 : 0.89, { x: e.clientX, y: e.clientY }); }, { passive: false });
+})();
+
+$('#openMap').addEventListener('click', openMap);
+$('#mapClose').addEventListener('click', closeMap);
+$('#mapZoomIn').addEventListener('click', () => window._mapZoom(1.25));
+$('#mapZoomOut').addEventListener('click', () => window._mapZoom(0.8));
+$('#mapReset').addEventListener('click', () => { mapState.scale = 1; mapState.tx = 0; mapState.ty = 0; applyMapTransform(); });
+
 // ── Service worker ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

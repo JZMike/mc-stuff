@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import (
-    actions, alerts, catalog, claude_sessions, config, docker_api, infra, ports, system, telegram,
+    actions, alerts, catalog, claude_sessions, config, docker_api, infra, ports, system,
+    telegram, topology,
 )
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -199,6 +200,11 @@ async def api_claude_restart(project: str):
 @app.get("/api/apps")
 async def api_apps():
     return await ports.discover()
+
+
+@app.get("/api/map")
+async def api_map():
+    return await topology.build()
 
 
 # ── Alertas ──────────────────────────────────────────────────────────────────
