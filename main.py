@@ -118,7 +118,14 @@ async def api_container_inspect(cid: str):
         return JSONResponse(d, status_code=400)
     meta = catalog.describe(d["name"], d["image"], d.get("labels"))
     host = config.TAILSCALE_HOST
-    d["urls"] = [{"port": p["public"], "url": f"https://{host}:{p['public']}"} for p in d["ports"]]
+    served = await infra.https_ports()
+    urls = []
+    for p in d["ports"]:
+        port = p["public"]
+        if config.is_web(port, meta.get("svg")):
+            scheme = "https" if port in served else "http"
+            urls.append({"port": port, "url": f"{scheme}://{host}:{port}"})
+    d["urls"] = urls
     d.pop("labels", None)  # não devolver labels em cru ao cliente
     return {**d, "helper": meta}
 

@@ -26,7 +26,7 @@ const fmtAgo = (ts) => {
   if (s < 86400) return Math.floor(s / 3600) + 'h'; return Math.floor(s / 86400) + 'd';
 };
 const colorFor = (pct) => pct >= 90 ? 'var(--crit)' : pct >= 75 ? 'var(--warn)' : 'var(--accent)';
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ── Toast ────────────────────────────────────────────────────────────────────
 let toastT;
@@ -665,6 +665,7 @@ function tapNode(g) {
   window._mapZoom = (f) => zoomBy(f, null);
   S.addEventListener('pointerdown', (e) => {
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { S.setPointerCapture(e.pointerId); } catch {}
     if (pts.size === 1) { moved = 0; downT = Date.now(); downTarget = e.target.closest('.node'); }
     if (pts.size === 2) lastDist = dd();
   });

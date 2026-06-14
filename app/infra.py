@@ -25,9 +25,8 @@ async def https_ports() -> set:
             ports.add(int(m.group(1)) if m.group(1) else 443)
     if not ports:
         ports = config.tailscale_https_ports()  # fallback
-    elif now - _https_cache["t"] >= 120:
-        _https_cache.update(t=now, ports=ports)
-    return ports or config.tailscale_https_ports()
+    _https_cache.update(t=now, ports=ports)  # cacheia sempre (evita re-correr nsenter)
+    return ports
 
 
 async def tailscale_status() -> dict:

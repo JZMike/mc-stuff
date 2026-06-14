@@ -33,14 +33,17 @@ def _record(level: str, key: str, title: str, body: str, pushed: bool) -> dict:
 
 async def _maybe_push(level: str, key: str, title: str, body: str) -> None:
     now = time.time()
+    # ainda em cooldown → não envia nem regista (evita inundar o histórico)
     if now - _last_sent.get(key, 0) < config.ALERT_COOLDOWN_SECONDS:
-        _record(level, key, title, body, pushed=False)
         return
     emoji = {"critical": "🔴", "warning": "🟠", "info": "🟢"}.get(level, "🔔")
     text = f"{emoji} <b>{config.SERVER_NAME} · {title}</b>\n{body}"
     res = await telegram.send(text)
-    _last_sent[key] = now
-    _record(level, key, title, body, pushed=res.get("ok", False))
+    ok = res.get("ok", False)
+    # sucesso → cooldown completo; falha → re-tentar em ~60s (não arma o cooldown todo)
+    retry = min(60, config.ALERT_COOLDOWN_SECONDS)
+    _last_sent[key] = now if ok else now - config.ALERT_COOLDOWN_SECONDS + retry
+    _record(level, key, title, body, pushed=ok)
 
 
 def _check_threshold(key: str, value: float, limit: float) -> bool:
