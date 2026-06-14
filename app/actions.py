@@ -39,9 +39,12 @@ def _wrap_user(args: list[str]) -> list[str]:
     bash -lc 'exec "$@"' _ <args...> -> shell de login (apanha ~/bin no PATH)
     mas os argumentos são passados por argv, NUNCA concatenados em shell.
     """
+    # PATH alargado para apanhar ~/bin e ~/.local/bin (shell de login não-interativo
+    # pode não ler o ~/.bashrc). Os args vão por argv (exec "$@"), nunca em shell.
+    boot = 'export PATH="$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH"; exec "$@"'
     return ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
             "runuser", "-u", config.CLAUDE_USER, "--",
-            "bash", "-lc", 'exec "$@"', "_"] + args
+            "bash", "-lc", boot, "_"] + args
 
 
 async def run_as_user(args: list[str], timeout: int = 60) -> dict:
