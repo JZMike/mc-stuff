@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from . import actions, config
 
@@ -47,16 +48,23 @@ async def _run(verb: str, project: str | None = None, timeout: int = 60) -> dict
 
 
 def _interpret_status(res: dict, project: str) -> str:
-    """Devolve 'online' / 'offline' / 'unknown' de forma tolerante."""
+    """Devolve 'online' / 'offline' / 'unknown'.
+
+    Formato do mikeclaude: 'online: claude-<proj>' / 'offline: claude-<proj>'.
+    Mantém fallbacks tolerantes caso o formato mude.
+    """
     if res.get("error"):
         return "unknown"
     text = _clean(res).lower()
-    # pista forte: a sessão claude-<project> aparece à escuta
-    if f"claude-{project}" in text and any(h in text for h in _ONLINE_HINTS):
+    # formato exato do mikeclaude (offline primeiro, por segurança)
+    if re.search(r"\boffline\b", text):
+        return "offline"
+    if re.search(r"\bonline\b", text):
         return "online"
+    # fallbacks
     if any(h in text for h in _OFFLINE_HINTS):
         return "offline"
-    if any(h in text for h in _ONLINE_HINTS):
+    if f"claude-{project}" in text or any(h in text for h in _ONLINE_HINTS):
         return "online"
     return "online" if res.get("rc") == 0 else "offline"
 
