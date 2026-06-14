@@ -70,7 +70,7 @@ async def discover() -> dict:
     for port, info in sorted(by_port.items()):
         meta = known.get(str(port), {})
         ref = info.get("container") or info.get("process") or ""
-        name = meta.get("name") or ref or f"Porta {port}"
+        name = ref or meta.get("name") or f"Porta {port}"
         cat = catalog.describe(ref or name, ref)
         apps.append({
             **info,

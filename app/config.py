@@ -118,11 +118,16 @@ TAILSCALE_HOST = os.getenv("TAILSCALE_HOST", "mikeserver.tail228d40.ts.net")
 # Apps conhecidas (nome amigável + ícone) por porta — enriquece o auto-discovery.
 # Override via env KNOWN_APPS_JSON.
 _DEFAULT_KNOWN_APPS = {
+    "5700": {"name": "MikeCockpit", "icon": "🎛️", "path": "/opt/projects/mikecockpit"},
     "4000": {"name": "CoreRoom", "icon": "🧩", "path": "/opt/projects/coreroom"},
     "9000": {"name": "Portainer", "icon": "🐳", "path": "portainer"},
-    "3001": {"name": "Uptime Kuma", "icon": "📈", "path": "uptime-kuma"},
-    "8123": {"name": "Home Assistant", "icon": "🏠", "path": "homeassistant"},
-    "5700": {"name": "MikeCockpit", "icon": "🎛️", "path": "/opt/projects/mikecockpit"},
+    "3001": {"name": "Homepage", "icon": "🏁", "path": "homepage"},
+    "3002": {"name": "Uptime Kuma", "icon": "📈", "path": "uptime-kuma"},
+    "8096": {"name": "Jellyfin", "icon": "🎬", "path": "jellyfin"},
+    "5678": {"name": "n8n", "icon": "🔗", "path": "n8n"},
+    "5555": {"name": "Vantage", "icon": "📰", "path": "/opt/projects/vantage"},
+    "3003": {"name": "HA Dashboard", "icon": "🏠", "path": "ha-dashboard"},
+    "18789": {"name": "OpenClaw", "icon": "🦅", "path": "openclaw"},
 }
 
 
