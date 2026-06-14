@@ -32,11 +32,13 @@ app = FastAPI(title=config.APP_NAME, lifespan=lifespan)
 @app.get("/api/v1/health")
 @app.get("/health")
 async def health():
+    docker_ok = await docker_api.available()
     return {
         "status": "ok",
-        "service": "mikecommand",
+        "service": "mikecockpit",
         "server": config.SERVER_NAME,
-        "docker": await docker_api.available(),
+        "docker": docker_ok,
+        "docker_error": None if docker_ok else docker_api._PROBE_ERROR,
         "host_cmd": actions.host_cmd_available(),
         "telegram": telegram.configured(),
     }
@@ -69,6 +71,11 @@ async def api_container_action(cid: str, action: str):
     res = await docker_api.container_action(cid, action)
     code = 200 if res.get("ok") else 400
     return JSONResponse(res, status_code=code)
+
+
+@app.get("/api/containers/{cid}/stats")
+async def api_container_stats(cid: str):
+    return await docker_api.container_stats(cid)
 
 
 @app.get("/api/containers/{cid}/logs")

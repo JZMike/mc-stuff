@@ -108,7 +108,7 @@ async function renderOverview() {
 async function renderDocker() {
   const d = await api('/containers');
   const el = $('#containerList');
-  if (!d.available) { el.innerHTML = emptyState('🐳', 'Docker indisponível', 'docker.sock não está montado.'); return; }
+  if (!d.available) { el.innerHTML = emptyState('🐳', 'Docker indisponível', esc(d.error || 'docker.sock não acessível.')); return; }
   if (!d.containers.length) { el.innerHTML = emptyState('🐳', 'Sem containers', 'Nada a correr.'); return; }
   el.innerHTML = d.containers.map(ct => {
     const ports = ct.ports.map(p => p.public).filter(Boolean).join(', ');
@@ -130,12 +130,23 @@ window.openContainer = function (ct) {
       : [['start', '▶ Arrancar', 'primary']];
   openSheet(`
     <h2>${esc(ct.name)}</h2>
-    <div class="dim" style="font-size:13px;margin-bottom:14px">${esc(ct.image)} · ${esc(ct.status)}</div>
+    <div class="dim" style="font-size:13px;margin-bottom:12px">${esc(ct.image)} · ${esc(ct.status)}</div>
+    <div id="ctStats" class="grid grid-2" style="margin-bottom:14px"></div>
     <div class="btn-row">${acts.map(([a, l, k]) =>
       `<button class="btn ${k}" style="flex:1" onclick="containerAction('${ct.id}','${a}',this)">${l}</button>`).join('')}</div>
     <button class="btn block" style="margin-top:10px" onclick="loadLogs('${ct.id}',this)">📜 Ver logs</button>
     ${ct.compose_workdir ? `<div class="dim mono" style="font-size:11.5px;margin-top:14px">📁 ${esc(ct.compose_workdir)}</div>` : ''}
     <div id="logArea" style="margin-top:12px"></div>`);
+  if (ct.state === 'running') loadStats(ct.id);
+};
+window.loadStats = async function (id) {
+  try {
+    const s = await api(`/containers/${id}/stats`);
+    if (!s.ok) return;
+    $('#ctStats').innerHTML =
+      `<div class="card" style="padding:11px"><div class="kpi-label">CPU</div><div class="kpi-value" style="font-size:19px;color:${colorFor(s.cpu)}">${s.cpu}<span class="unit">%</span></div></div>
+       <div class="card" style="padding:11px"><div class="kpi-label">RAM</div><div class="kpi-value" style="font-size:19px;color:${colorFor(s.mem_pct)}">${s.mem_pct}<span class="unit">%</span></div><div class="dim" style="font-size:11px;margin-top:2px">${fmtBytes(s.mem_used)}</div></div>`;
+  } catch {}
 };
 window.containerAction = async function (id, action, btn) {
   btn.disabled = true; const old = btn.textContent; btn.textContent = '…';

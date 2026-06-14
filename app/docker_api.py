@@ -1,51 +1,65 @@
-"""Cliente mínimo para o Docker Engine API via /var/run/docker.sock (sem o SDK pesado)."""
+"""Cliente mínimo para o Docker Engine API via /var/run/docker.sock (sem o SDK pesado).
+
+Usa endpoints SEM versão (o daemon serve na versão máxima que suporta) para
+máxima compatibilidade entre versões do Docker.
+"""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import httpx
 
 from . import config
 
+_PROBE_ERROR: str | None = None
 
-def _available() -> bool:
-    return Path(config.DOCKER_SOCK).exists()
+
+def _socket_exists() -> bool:
+    p = Path(config.DOCKER_SOCK)
+    return p.exists() or p.is_socket()
 
 
 def _client() -> httpx.AsyncClient:
     transport = httpx.AsyncHTTPTransport(uds=config.DOCKER_SOCK)
-    # base_url é ignorado para UDS mas o httpx exige host; usamos um placeholder.
     return httpx.AsyncClient(transport=transport, base_url="http://docker", timeout=15.0)
 
 
 async def available() -> bool:
-    if not _available():
+    global _PROBE_ERROR
+    if not _socket_exists():
+        _PROBE_ERROR = f"{config.DOCKER_SOCK} não existe (montar no compose)."
         return False
     try:
         async with _client() as c:
-            r = await c.get("/v1.43/_ping")
-            return r.status_code == 200
-    except (httpx.HTTPError, OSError):
+            r = await c.get("/_ping")
+            if r.status_code == 200:
+                _PROBE_ERROR = None
+                return True
+            _PROBE_ERROR = f"_ping HTTP {r.status_code}"
+            return False
+    except (httpx.HTTPError, OSError) as e:
+        _PROBE_ERROR = str(e)
         return False
 
 
 def _ports(container: dict) -> list[dict]:
     out = []
+    seen = set()
     for p in container.get("Ports", []) or []:
-        if p.get("PublicPort"):
-            out.append({"private": p.get("PrivatePort"), "public": p.get("PublicPort"),
+        pub = p.get("PublicPort")
+        if pub and pub not in seen:
+            seen.add(pub)
+            out.append({"private": p.get("PrivatePort"), "public": pub,
                         "ip": p.get("IP"), "type": p.get("Type")})
     return out
 
 
 async def list_containers() -> dict:
-    """Lista containers + estatísticas leves (sem stats stream — caro no N97)."""
-    if not _available():
-        return {"available": False, "containers": []}
+    if not _socket_exists():
+        return {"available": False, "error": f"{config.DOCKER_SOCK} não montado.", "containers": []}
     try:
         async with _client() as c:
-            r = await c.get("/v1.43/containers/json", params={"all": "true"})
+            r = await c.get("/containers/json", params={"all": "true"})
             r.raise_for_status()
             raw = r.json()
     except (httpx.HTTPError, OSError) as e:
@@ -59,26 +73,24 @@ async def list_containers() -> dict:
             "id": ct.get("Id", "")[:12],
             "name": name,
             "image": ct.get("Image", ""),
-            "state": ct.get("State", "unknown"),       # running / exited / paused ...
-            "status": ct.get("Status", ""),            # "Up 3 hours" / "Exited (0) ..."
+            "state": ct.get("State", "unknown"),
+            "status": ct.get("Status", ""),
             "ports": _ports(ct),
             "compose_project": labels.get("com.docker.compose.project"),
             "compose_workdir": labels.get("com.docker.compose.project.working_dir"),
-            "restart_count": None,
         })
     containers.sort(key=lambda x: (x["state"] != "running", x["name"]))
     return {"available": True, "containers": containers}
 
 
 async def container_action(cid: str, action: str) -> dict:
-    """restart | stop | start | pause | unpause."""
     if action not in ("restart", "stop", "start", "pause", "unpause"):
         return {"ok": False, "error": "ação inválida"}
-    if not _available():
+    if not _socket_exists():
         return {"ok": False, "error": "docker.sock indisponível"}
     try:
         async with _client() as c:
-            r = await c.post(f"/v1.43/containers/{cid}/{action}", timeout=60.0)
+            r = await c.post(f"/containers/{cid}/{action}", timeout=60.0)
             if r.status_code in (204, 304):
                 return {"ok": True, "action": action, "id": cid}
             return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
@@ -86,22 +98,46 @@ async def container_action(cid: str, action: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def container_stats(cid: str) -> dict:
+    """Snapshot único de CPU%/RAM de um container (stream=false → já traz precpu)."""
+    if not _socket_exists():
+        return {"ok": False}
+    try:
+        async with _client() as c:
+            r = await c.get(f"/containers/{cid}/stats", params={"stream": "false"}, timeout=20.0)
+            r.raise_for_status()
+            s = r.json()
+    except (httpx.HTTPError, OSError, ValueError):
+        return {"ok": False}
+    try:
+        cpu = s["cpu_stats"]; pre = s["precpu_stats"]
+        cd = cpu["cpu_usage"]["total_usage"] - pre["cpu_usage"]["total_usage"]
+        sd = cpu.get("system_cpu_usage", 0) - pre.get("system_cpu_usage", 0)
+        ncpu = cpu.get("online_cpus") or len(cpu["cpu_usage"].get("percpu_usage") or []) or 1
+        cpu_pct = round((cd / sd) * ncpu * 100, 1) if sd > 0 and cd > 0 else 0.0
+        mem = s["memory_stats"]
+        used = mem.get("usage", 0) - (mem.get("stats", {}).get("inactive_file", 0) or 0)
+        limit = mem.get("limit", 0)
+        mem_pct = round(used / limit * 100, 1) if limit else 0.0
+        return {"ok": True, "cpu": cpu_pct, "mem_pct": mem_pct, "mem_used": used, "mem_limit": limit}
+    except (KeyError, TypeError, ZeroDivisionError):
+        return {"ok": False}
+
+
 async def container_logs(cid: str, tail: int = 200) -> dict:
-    if not _available():
+    if not _socket_exists():
         return {"ok": False, "error": "docker.sock indisponível", "logs": ""}
     try:
         async with _client() as c:
-            r = await c.get(f"/v1.43/containers/{cid}/logs",
+            r = await c.get(f"/containers/{cid}/logs",
                             params={"stdout": "true", "stderr": "true", "tail": str(tail), "timestamps": "false"})
             r.raise_for_status()
-            # logs vêm com um header de 8 bytes por frame quando não há TTY; limpamos.
             return {"ok": True, "logs": _demux(r.content)}
     except (httpx.HTTPError, OSError) as e:
         return {"ok": False, "error": str(e), "logs": ""}
 
 
 def _demux(data: bytes) -> str:
-    """Remove os headers de stream do Docker (8 bytes) se presentes."""
     out = bytearray()
     i = 0
     n = len(data)

@@ -1,10 +1,7 @@
 """Trace de portas → apps acessíveis via Tailscale.
 
-Combina:
-  - portas publicadas pelos containers Docker (+ working_dir do compose = caminho),
-  - portas à escuta no host (psutil),
-  - um dicionário de apps conhecidas (nome/ícone) por porta.
-Produz uma lista de links `https://<tailscale_host>:<porta>`.
+Prioriza os containers Docker (nomeados, com caminho). Só acrescenta serviços
+do host que sejam REALMENTE acessíveis: ignora loopback, docker-proxy e ruído.
 """
 from __future__ import annotations
 
@@ -12,36 +9,47 @@ import psutil
 
 from . import config, docker_api
 
+# processos que são ruído (não são "apps" do utilizador)
+_NOISE_PROC = {"docker-proxy", "systemd-resolve", "systemd-resolved"}
+# portas de infra que não interessam como "app"
+_NOISE_PORTS = {53, 5353, 5355}
+
+
+def _is_loopback(ip: str | None) -> bool:
+    if not ip:
+        return False
+    return ip in ("127.0.0.1", "::1") or ip.startswith("127.")
+
 
 async def discover() -> dict:
     known = config.known_apps()
     host = config.TAILSCALE_HOST
     by_port: dict[int, dict] = {}
 
-    # 1) Containers Docker (têm caminho via working_dir do compose)
+    # 1) Containers Docker — a fonte limpa e nomeada (com caminho via compose)
     dock = await docker_api.list_containers()
     for ct in dock.get("containers", []):
+        if ct["state"] != "running":
+            continue
         path = ct.get("compose_workdir") or ""
         for p in ct.get("ports", []):
             port = p.get("public")
             if not port:
                 continue
             by_port.setdefault(port, {
-                "port": port,
-                "source": "docker",
-                "container": ct["name"],
-                "state": ct["state"],
-                "path": path,
+                "port": port, "source": "docker", "container": ct["name"],
+                "state": "running", "path": path,
             })
 
-    # 2) Portas à escuta no host (apanha serviços fora do Docker)
+    # 2) Serviços do host — só os acessíveis (não-loopback, não-ruído)
     try:
         for conn in psutil.net_connections(kind="inet"):
             if conn.status != psutil.CONN_LISTEN or not conn.laddr:
                 continue
             port = conn.laddr.port
-            # ignora portas efémeras altas e loopback-only sem interesse
-            if port in by_port:
+            if port in by_port or port in _NOISE_PORTS:
+                continue
+            if _is_loopback(conn.laddr.ip):
                 continue
             pname = "?"
             if conn.pid:
@@ -49,8 +57,10 @@ async def discover() -> dict:
                     pname = psutil.Process(conn.pid).name()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
+            if pname in _NOISE_PROC:
+                continue
             by_port.setdefault(port, {
-                "port": port, "source": "host", "process": pname, "state": "listen", "path": ""
+                "port": port, "source": "host", "process": pname, "state": "listen", "path": "",
             })
     except (psutil.AccessDenied, OSError):
         pass
@@ -69,6 +79,5 @@ async def discover() -> dict:
             "known": bool(meta),
         })
 
-    # apps conhecidas primeiro, depois por porta
-    apps.sort(key=lambda a: (not a["known"], a["port"]))
+    apps.sort(key=lambda a: (not a["known"], a["source"] != "docker", a["port"]))
     return {"tailscale_host": host, "count": len(apps), "apps": apps}
