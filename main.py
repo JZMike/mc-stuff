@@ -12,7 +12,9 @@ from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import actions, alerts, config, docker_api, infra, ports, system, telegram
+from app import (
+    actions, alerts, claude_sessions, config, docker_api, infra, ports, system, telegram,
+)
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -121,6 +123,45 @@ async def api_commands():
 @app.post("/api/commands/{command_id}/run")
 async def api_run_command(command_id: str):
     res = await actions.run_allowed(command_id)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+# ── Sessões Claude (tmux via mikeclaude) ─────────────────────────────────────
+@app.get("/api/claude/projects")
+async def api_claude_projects():
+    return await claude_sessions.projects()
+
+
+@app.get("/api/claude/sessions")
+async def api_claude_sessions():
+    return await claude_sessions.list_sessions()
+
+
+@app.get("/api/claude/status")
+async def api_claude_status_all():
+    return await claude_sessions.status_all()
+
+
+@app.get("/api/claude/status/{project}")
+async def api_claude_status(project: str):
+    return await claude_sessions.status(project)
+
+
+@app.post("/api/claude/start/{project}")
+async def api_claude_start(project: str):
+    res = await claude_sessions.start(project)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.post("/api/claude/stop/{project}")
+async def api_claude_stop(project: str):
+    res = await claude_sessions.stop(project)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.post("/api/claude/restart/{project}")
+async def api_claude_restart(project: str):
+    res = await claude_sessions.restart(project)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 

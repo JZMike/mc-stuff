@@ -134,3 +134,27 @@ def known_apps() -> dict:
         except json.JSONDecodeError:
             pass
     return _DEFAULT_KNOWN_APPS
+
+
+# ── Sessões Claude (tmux via ~/bin/mikeclaude) ───────────────────────────────
+# O script corre como ESTE utilizador (não root, sem sudo).
+CLAUDE_USER = os.getenv("MIKECLAUDE_USER", "migcarvalho")
+MIKECLAUDE_BIN = os.getenv("MIKECLAUDE_BIN", "mikeclaude")  # resolvido via PATH de login (~/bin)
+CLAUDE_PROJECTS_BASE = os.getenv("CLAUDE_PROJECTS_BASE", "/opt/projects")
+
+# Whitelist canónica no backend — só estes projetos são aceites.
+_DEFAULT_CLAUDE_PROJECTS = [
+    "vantage", "coreroom", "gap-advisor", "ha-dashboard", "mc-stuff",
+    "mikecockpit", "mikecommand", "obsidian", "openclaw", "shared", "tradeagent",
+]
+
+
+def claude_projects() -> list[str]:
+    raw = os.getenv("CLAUDE_PROJECTS", "").strip()
+    if raw:
+        return [p.strip() for p in raw.split(",") if p.strip()]
+    return _DEFAULT_CLAUDE_PROJECTS
+
+
+def claude_project_path(project: str) -> str:
+    return f"{CLAUDE_PROJECTS_BASE}/{project}"

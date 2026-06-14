@@ -83,6 +83,17 @@
       <div class="list" id="cmdList"></div>
     </section>
 
+    <!-- ░░ CLAUDE SESSIONS ░░ -->
+    <section class="view" id="view-claude">
+      <div class="view-title">Sessões Claude (tmux)</div>
+      <div class="btn-row" style="margin-bottom:14px">
+        <button class="btn" id="claudeRefresh" style="flex:1">↻ Atualizar estados</button>
+        <button class="btn" id="claudeList" style="flex:1">📋 Sessões ativas</button>
+      </div>
+      <div id="claudeListOut"></div>
+      <div class="list" id="claudeProjects"><div class="skeleton" style="height:84px"></div></div>
+    </section>
+
     <!-- ░░ APPS ░░ -->
     <section class="view" id="view-apps">
       <div class="view-title">Apps via Tailscale</div>
@@ -110,6 +121,9 @@
     </button>
     <button class="tab" data-view="commands">
       <svg viewBox="0 0 24 24"><path d="M4 5l6 7-6 7M12 19h8"/></svg>Comandos
+    </button>
+    <button class="tab" data-view="claude">
+      <svg viewBox="0 0 24 24"><path d="M12 3l2.2 5 5.3.4-4 3.5 1.2 5.2L12 19.8 7.3 22.6l1.2-5.2-4-3.5 5.3-.4z" transform="scale(0.7) translate(5 1)"/><rect x="3" y="16" width="18" height="5" rx="1.5"/></svg>Claude
     </button>
     <button class="tab" data-view="apps">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Apps

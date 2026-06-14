@@ -271,6 +271,68 @@ window.runCmd = async function (id, btn) {
 };
 
 // ══ APPS ═════════════════════════════════════════════════════════════════════
+async function renderClaude() {
+  const d = await api('/claude/projects');
+  claudeProjects = d.projects;
+  if (!d.available) {
+    $('#claudeProjects').innerHTML = `<div class="install" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)">⚠️ Execução no host indisponível (precisa de privileged + pid:host).</div>`;
+  }
+  drawClaude();
+  if (d.available) claudeRefreshStatus();
+}
+let claudeProjects = [];
+function drawClaude() {
+  $('#claudeProjects').innerHTML = claudeProjects.map(p => {
+    const st = p.status || 'unknown';
+    const pill = st === 'online' ? '<span class="pill ok">online</span>'
+      : st === 'offline' ? '<span class="pill">offline</span>'
+      : '<span class="pill warn">…</span>';
+    return `<div class="item" style="flex-direction:column;align-items:stretch;gap:11px">
+      <div class="row" style="gap:12px">
+        <span class="dot ${st === 'online' ? 'ok' : st === 'offline' ? 'exited' : 'warn'}"></span>
+        <div class="grow"><div class="name">claude-${esc(p.name)}</div><div class="meta mono">${esc(p.path)}</div></div>
+        ${pill}
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" style="flex:1.2" onclick="claudeAct('${p.name}','start',this)">▶ Start</button>
+        <button class="btn" style="flex:1.2" onclick="claudeAct('${p.name}','restart',this)">↻ Restart</button>
+        <button class="btn danger" style="flex:1" onclick="claudeAct('${p.name}','stop',this)">⏹ Stop</button>
+      </div></div>`;
+  }).join('');
+}
+window.claudeAct = async function (project, verb, btn) {
+  const row = btn.closest('.item'); [...row.querySelectorAll('button')].forEach(b => b.disabled = true);
+  const old = btn.textContent; btn.textContent = '…';
+  try {
+    const r = await api(`/claude/${verb}/${project}`, { method: 'POST' });
+    toast(r.message || `${verb} ok`, r.ok ? (r.noop ? '' : 'ok') : 'err');
+    await claudeStatusOne(project);
+  } catch (e) { toast(e.message, 'err'); }
+  [...row.querySelectorAll('button')].forEach(b => b.disabled = false); btn.textContent = old;
+};
+async function claudeRefreshStatus() {
+  try {
+    const d = await api('/claude/status');
+    claudeProjects = claudeProjects.map(p => ({ ...p, status: d.statuses[p.name] || 'unknown' }));
+    drawClaude();
+  } catch {}
+}
+async function claudeStatusOne(project) {
+  try {
+    const d = await api(`/claude/status/${project}`);
+    claudeProjects = claudeProjects.map(p => p.name === project ? { ...p, status: d.status } : p);
+    drawClaude();
+  } catch {}
+}
+async function claudeListSessions(btn) {
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '…';
+  try {
+    const d = await api('/claude/sessions');
+    $('#claudeListOut').innerHTML = `<div class="logbox" style="margin-bottom:14px">${esc(d.output || '(vazio)')}</div>`;
+  } catch (e) { toast(e.message, 'err'); }
+  btn.disabled = false; btn.textContent = old;
+}
+
 async function renderApps() {
   const d = await api('/apps');
   $('#appList').innerHTML = d.apps.map(a => `<a class="item" href="${esc(a.url)}" target="_blank" rel="noopener">
@@ -331,7 +393,7 @@ function setStatus(ok) {
 }
 
 // ── Router + polling ─────────────────────────────────────────────────────────
-const RENDER = { overview: renderOverview, docker: renderDocker, system: renderSystem, commands: renderCommands, apps: renderApps, alerts: renderAlerts };
+const RENDER = { overview: renderOverview, docker: renderDocker, system: renderSystem, commands: renderCommands, claude: renderClaude, apps: renderApps, alerts: renderAlerts };
 const POLL_MS = { overview: 4000, docker: 7000, apps: 15000, alerts: 12000 };
 let current = 'overview', pollT = null;
 
@@ -359,6 +421,8 @@ $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
 $('#procCpu').addEventListener('click', () => renderProcs('cpu'));
 $('#procMem').addEventListener('click', () => renderProcs('mem'));
 $('#rebootBtn').addEventListener('click', confirmReboot);
+$('#claudeRefresh').addEventListener('click', claudeRefreshStatus);
+$('#claudeList').addEventListener('click', (e) => claudeListSessions(e.currentTarget));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(current); });
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────

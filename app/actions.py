@@ -32,6 +32,42 @@ def _wrap(cmd: str) -> list[str]:
             "bash", "-lc", cmd]
 
 
+def _wrap_user(args: list[str]) -> list[str]:
+    """Corre `args` no host, COMO o utilizador config.CLAUDE_USER (sem sudo).
+
+    nsenter -> entra no host. runuser -u <user> -- desce ao utilizador.
+    bash -lc 'exec "$@"' _ <args...> -> shell de login (apanha ~/bin no PATH)
+    mas os argumentos são passados por argv, NUNCA concatenados em shell.
+    """
+    return ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+            "runuser", "-u", config.CLAUDE_USER, "--",
+            "bash", "-lc", 'exec "$@"', "_"] + args
+
+
+async def run_as_user(args: list[str], timeout: int = 60) -> dict:
+    """Executa um comando (lista de args, sem shell) como o utilizador."""
+    if not host_cmd_available():
+        return {"ok": False, "rc": -1, "stdout": "", "stderr": "",
+                "error": "Execução no host indisponível (precisa de pid:host + privileged + nsenter)."}
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *_wrap_user(args),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return {
+            "ok": proc.returncode == 0,
+            "rc": proc.returncode,
+            "stdout": out.decode("utf-8", "replace")[-8000:],
+            "stderr": err.decode("utf-8", "replace")[-4000:],
+        }
+    except asyncio.TimeoutError:
+        return {"ok": False, "rc": -1, "stdout": "", "stderr": "", "error": f"timeout ({timeout}s)"}
+    except (OSError, ValueError) as e:
+        return {"ok": False, "rc": -1, "stdout": "", "stderr": "", "error": str(e)}
+
+
 async def run_host(cmd: str, timeout: int = 120) -> dict:
     if not host_cmd_available():
         return {"ok": False, "rc": -1, "stdout": "", "stderr": "",

@@ -14,6 +14,7 @@ Não é só leitura — **agir** à distância a partir do telemóvel, via Tails
 | **Docker** | Lista de containers + estado; toca → reiniciar / parar / pausar / arrancar + ver logs. |
 | **Sistema** | Info do host, top processos (CPU/RAM) e **reboot da VM** (com confirmação escrita). |
 | **Comandos** | Allowlist de comandos no host (sync CoreRoom, guardar vault, prune, df…) com output. |
+| **Claude** | Gerir sessões Claude em tmux por projeto (Start/Stop/Restart via `~/bin/mikeclaude`, como utilizador, sem sudo). |
 | **Apps** | Auto-discovery de portas → links Tailscale das apps (CoreRoom, Portainer, Kuma…). |
 | **Alertas** | Limiares + estado do Telegram + teste de push + histórico de alertas. |
 
