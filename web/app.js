@@ -401,13 +401,18 @@ async function claudeListSessions(btn) {
 
 async function renderApps() {
   const d = await api('/apps');
-  $('#appList').innerHTML = d.apps.map(a => `<a class="item" href="${esc(a.url)}" target="_blank" rel="noopener">
-    <span class="ico">${a.icon}</span>
-    <div class="grow"><div class="name">${esc(a.name)}</div>
-      <div class="meta">${a.desc ? esc(a.desc) : ':' + a.port + (a.path ? ' · ' + esc(a.path) : a.container ? ' · ' + esc(a.container) : a.process ? ' · ' + esc(a.process) : '')}</div></div>
-    <span class="pill" style="font-size:10px">:${a.port}</span>
-    <span class="dot ${a.state === 'running' ? 'running' : a.state === 'listen' ? 'listen' : 'exited'}"></span>
-    <span class="chev">↗</span></a>`).join('') || emptyState('🔌', 'Sem apps', 'Nenhuma porta detetada.');
+  $('#appList').innerHTML = d.apps.map(a => {
+    const open = a.web && a.url;
+    const tag = open ? 'a' : 'div';
+    const attrs = open ? `href="${esc(a.url)}" target="_blank" rel="noopener"` : '';
+    const sub = a.desc ? esc(a.desc) : ':' + a.port + (a.path ? ' · ' + esc(a.path) : a.container ? ' · ' + esc(a.container) : a.process ? ' · ' + esc(a.process) : '');
+    return `<${tag} class="item" ${attrs}>
+      <span class="ico">${a.icon}</span>
+      <div class="grow"><div class="name">${esc(a.name)}</div><div class="meta">${sub}</div></div>
+      <span class="pill" style="font-size:10px">:${a.port}</span>
+      <span class="dot ${a.state === 'running' ? 'running' : a.state === 'listen' ? 'listen' : 'exited'}"></span>
+      <span class="chev">${open ? '↗' : ''}</span></${tag}>`;
+  }).join('') || emptyState('🔌', 'Sem apps', 'Nenhuma porta detetada.');
   markSync();
 }
 
@@ -606,7 +611,7 @@ function renderMap(d) {
   const links = positioned.map(nd =>
     `<line class="link ${nd.status}" x1="${nd.x.toFixed(1)}" y1="${nd.y.toFixed(1)}" x2="0" y2="0"></line>`).join('');
   const nodes = positioned.map(nd => `
-    <g class="node ${nd.status}" data-url="${esc(nd.url)}" data-name="${esc(nd.name)}" data-port="${nd.port}" data-status="${nd.status}" transform="translate(${nd.x.toFixed(1)} ${nd.y.toFixed(1)})">
+    <g class="node ${nd.status}" data-url="${esc(nd.url)}" data-name="${esc(nd.name)}" data-port="${nd.port}" data-status="${nd.status}" data-web="${nd.web ? 1 : 0}" transform="translate(${nd.x.toFixed(1)} ${nd.y.toFixed(1)})">
       <circle class="halo ${nd.status}" r="26"></circle>
       <circle class="ndot" r="16"></circle>
       <g class="nico" transform="translate(-9 -9) scale(.75)">${nodeIcon(nd.svg)}</g>
@@ -632,12 +637,15 @@ function renderMap(d) {
 function tapNode(g) {
   const url = g.getAttribute('data-url'), name = g.getAttribute('data-name');
   const port = g.getAttribute('data-port'), st = g.getAttribute('data-status');
+  const web = g.getAttribute('data-web') === '1';
+  let action;
+  if (st !== 'up') action = `<div class="dim" style="font-size:13px">Serviço parado — vai à aba <b>Docker</b> para o reiniciar.</div>`;
+  else if (web && url) action = `<a class="btn primary block" href="${esc(url)}" target="_blank" rel="noopener">↗ Abrir app</a>`;
+  else action = `<div class="dim" style="font-size:13px">Serviço interno (não é uma página web).</div>`;
   openSheet(`<h2>${esc(name)}</h2>
     <div class="row" style="gap:9px;margin:6px 0 16px"><span class="dot ${st === 'up' ? 'ok' : 'crit'}"></span>
       <span class="muted">${st === 'up' ? 'a correr' : 'em baixo'} · porta ${esc(port)}</span></div>
-    ${st === 'up'
-      ? `<a class="btn primary block" href="${esc(url)}" target="_blank" rel="noopener">↗ Abrir app</a>`
-      : `<div class="dim" style="font-size:13px">Serviço parado — vai à aba <b>Docker</b> para o reiniciar.</div>`}`);
+    ${action}`);
 }
 
 (function mapGestures() {

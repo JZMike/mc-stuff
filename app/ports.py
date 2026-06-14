@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import psutil
 
-from . import catalog, config, docker_api
+from . import catalog, config, docker_api, infra
 
 # processos que são ruído (não são "apps" do utilizador)
 _NOISE_PROC = {"docker-proxy", "systemd-resolve", "systemd-resolved"}
@@ -65,23 +65,29 @@ async def discover() -> dict:
     except (psutil.AccessDenied, OSError):
         pass
 
-    # 3) Enriquecer com apps conhecidas + montar URL
+    # 3) Enriquecer com apps conhecidas + montar URL (esquema http/https correto)
+    served = await infra.https_ports()
     apps = []
     for port, info in sorted(by_port.items()):
         meta = known.get(str(port), {})
         ref = info.get("container") or info.get("process") or ""
         name = ref or meta.get("name") or f"Porta {port}"
         cat = catalog.describe(ref or name, ref)
+        svg = cat.get("svg", "generic")
+        web = config.is_web(port, svg)
+        scheme = "https" if port in served else "http"
         apps.append({
             **info,
             "name": name,
             "icon": meta.get("icon") or (cat["icon"] if cat["known"] else "🔌"),
             "path": info.get("path") or meta.get("path", ""),
-            "url": f"https://{host}:{port}",
+            "scheme": scheme,
+            "web": web,
+            "url": f"{scheme}://{host}:{port}" if web else "",
             "known": bool(meta),
             "desc": cat["what"] if cat["known"] else "",
             "critical": cat["critical"] if cat["known"] else None,
-            "svg": cat.get("svg", "generic"),
+            "svg": svg,
         })
 
     apps.sort(key=lambda a: (not a["known"], a["source"] != "docker", a["port"]))

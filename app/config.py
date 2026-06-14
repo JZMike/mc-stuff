@@ -115,6 +115,28 @@ def allowed_commands() -> list[dict]:
 
 # ── Apps Tailscale (port trace) ──────────────────────────────────────────────
 TAILSCALE_HOST = os.getenv("TAILSCALE_HOST", "mikeserver.tail228d40.ts.net")
+# Portas servidas por HTTPS (tailscale serve). Fallback caso o status não esteja
+# acessível; em runtime é confirmado por `tailscale serve status`.
+_DEFAULT_HTTPS_PORTS = "443,4000,5555,5556,5559,5599"
+
+
+def tailscale_https_ports() -> set[int]:
+    raw = os.getenv("TAILSCALE_HTTPS_PORTS", _DEFAULT_HTTPS_PORTS)
+    out = set()
+    for p in raw.split(","):
+        p = p.strip()
+        if p.isdigit():
+            out.add(int(p))
+    return out
+
+
+# Serviços que NÃO são páginas web (não vale a pena oferecer link de "abrir").
+_NON_WEB_SVG = {"db", "cache", "terminal", "lock"}
+_NON_WEB_PORTS = {22, 53, 5353}
+
+
+def is_web(port: int, svg: str | None) -> bool:
+    return (svg not in _NON_WEB_SVG) and (port not in _NON_WEB_PORTS)
 # Apps conhecidas (nome amigável + ícone) por porta — enriquece o auto-discovery.
 # Override via env KNOWN_APPS_JSON.
 _DEFAULT_KNOWN_APPS = {

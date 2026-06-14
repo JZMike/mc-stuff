@@ -6,7 +6,7 @@ o catálogo para nome/ícone.
 """
 from __future__ import annotations
 
-from . import catalog, config, docker_api, ports, system
+from . import catalog, config, docker_api, infra, ports, system
 
 
 def _overall(cpu: float, mem: float, disk: float) -> str:
@@ -20,8 +20,9 @@ def _overall(cpu: float, mem: float, disk: float) -> str:
 async def build() -> dict:
     apps = (await ports.discover()).get("apps", [])
     seen = {a["port"] for a in apps}
+    served = await infra.https_ports()
     nodes = [{
-        "name": a["name"], "port": a["port"], "url": a["url"], "status": "up",
+        "name": a["name"], "port": a["port"], "url": a["url"], "web": a.get("web", True), "status": "up",
         "icon": a.get("icon", "🔌"), "svg": a.get("svg", "generic"), "critical": a.get("critical"),
         "kind": a.get("source", "host"),
     } for a in apps]
@@ -39,10 +40,13 @@ async def build() -> dict:
             continue
         seen.add(port)
         meta = catalog.describe(ct["name"], ct["image"])
+        svg = meta.get("svg", "generic")
+        web = config.is_web(port, svg)
+        scheme = "https" if port in served else "http"
         nodes.append({
             "name": ct["name"], "port": port,
-            "url": f"https://{config.TAILSCALE_HOST}:{port}", "status": "down",
-            "icon": meta["icon"], "svg": meta.get("svg", "generic"),
+            "url": f"{scheme}://{config.TAILSCALE_HOST}:{port}" if web else "", "web": web, "status": "down",
+            "icon": meta["icon"], "svg": svg,
             "critical": meta["critical"], "kind": "docker",
         })
 

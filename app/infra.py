@@ -2,8 +2,32 @@
 from __future__ import annotations
 
 import json
+import re
+import time
 
-from . import actions
+from . import actions, config
+
+_https_cache = {"t": 0.0, "ports": set()}
+
+
+async def https_ports() -> set:
+    """Portas servidas por HTTPS (via `tailscale serve status`), com cache de 120s.
+
+    Cai para o fallback de config se o status não estiver acessível.
+    """
+    now = time.time()
+    if now - _https_cache["t"] < 120 and _https_cache["ports"]:
+        return _https_cache["ports"]
+    ports = set()
+    res = await actions.run_host("tailscale serve status 2>/dev/null", timeout=10)
+    if res.get("ok") and res.get("stdout"):
+        for m in re.finditer(r"https://[^\s:/]+(?::(\d+))?", res["stdout"]):
+            ports.add(int(m.group(1)) if m.group(1) else 443)
+    if not ports:
+        ports = config.tailscale_https_ports()  # fallback
+    elif now - _https_cache["t"] >= 120:
+        _https_cache.update(t=now, ports=ports)
+    return ports or config.tailscale_https_ports()
 
 
 async def tailscale_status() -> dict:
