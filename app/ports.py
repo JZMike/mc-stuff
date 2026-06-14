@@ -81,6 +81,7 @@ async def discover() -> dict:
             "known": bool(meta),
             "desc": cat["what"] if cat["known"] else "",
             "critical": cat["critical"] if cat["known"] else None,
+            "svg": cat.get("svg", "generic"),
         })
 
     apps.sort(key=lambda a: (not a["known"], a["source"] != "docker", a["port"]))

@@ -479,10 +479,14 @@ function schedule() {
 }
 function go(view) {
   current = view;
+  const isMap = view === 'map';
+  $('#mapView').classList.toggle('open', isMap);
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
   window.scrollTo({ top: 0 });
-  load(view); schedule();
+  if (isMap) requestAnimationFrame(renderMapView);
+  else load(view);
+  schedule();
 }
 $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
 $('#procCpu').addEventListener('click', () => renderProcs('cpu'));
@@ -491,13 +495,13 @@ $('#rebootBtn').addEventListener('click', confirmReboot);
 $('#goApps').addEventListener('click', () => go('apps'));
 $('#claudeRefresh').addEventListener('click', claudeRefreshStatus);
 $('#claudeList').addEventListener('click', (e) => claudeListSessions(e.currentTarget));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(current); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && current !== 'map') load(current); });
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 let SERVER = 'MikeServer';
 (async function init() {
   try { const h = await api('/host'); SERVER = h.server_name; $('#hostSub').textContent = h.os; } catch {}
-  go('overview');
+  go('map');
   // badge de alertas críticos no tab
   setInterval(async () => {
     try {
@@ -523,17 +527,44 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 // ══ MAPA ORBITAL (átomo) ═════════════════════════════════════════════════════
+// Ícones SVG (viewBox 24×24, traço) — sem emojis.
+const ICONS = {
+  server: '<rect x="4" y="4" width="16" height="7" rx="1.5"/><rect x="4" y="13" width="16" height="7" rx="1.5"/><path d="M7.5 7.5h0M7.5 16.5h0"/>',
+  db: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.6 3.1 3 7 3s7-1.4 7-3V6"/><path d="M5 12c0 1.6 3.1 3 7 3s7-1.4 7-3"/>',
+  cache: '<path d="M13 3 5 13h5l-1 8 8-11h-5z"/>',
+  bolt: '<path d="M13 3 5 13h5l-1 8 8-11h-5z"/>',
+  storage: '<path d="M5 7h14l-1.3 12.5a1 1 0 0 1-1 .9H7.3a1 1 0 0 1-1-.9z"/><path d="M4 7h16"/>',
+  proxy: '<rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 16.5h0M10 16.5h0"/><path d="M8 7l-1 3M16 7l1 3M12 6v4"/>',
+  cloud: '<path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 3.5 3.5 0 0 0 7 18z"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
+  shield: '<path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  cube: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><rect x="14" y="14" width="7" height="7" rx="1.2"/>',
+  flask: '<path d="M9 3h6M10 3v6l-4.5 8a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 9V3"/>',
+  news: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h7M7 13h10M7 16h6"/>',
+  chart: '<path d="M4 4v16h16"/><path d="M7 15l3-4 3 2 4-6"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 11l2.5-3 2 2.5L14 7l3 4"/><path d="M9 20h6M12 16v4"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+  search: '<circle cx="11" cy="11" r="6"/><path d="M15.5 15.5l4.5 4.5"/>',
+  photo: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 5 4"/>',
+  flow: '<circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8.2 6h7.6M18 8.2v7.6M8 7.4l8 9.2"/>',
+  home: '<path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>',
+  media: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/>',
+  generic: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 12h0"/>',
+};
+ICONS.puzzle = ICONS.grid; ICONS.panel = ICONS.grid;
+const nodeIcon = (k) => ICONS[k] || ICONS.generic;
+
 const mapState = { scale: 1, tx: 0, ty: 0 };
 let _mapVP = null;
 const shortName = (s) => { s = String(s || ''); return s.length > 15 ? s.slice(0, 14) + '…' : s; };
 
-async function openMap() {
-  $('#mapView').classList.add('open');
+async function renderMapView() {
   $('#mapSub').textContent = 'a carregar…';
   try { renderMap(await api('/map')); }
   catch (e) { $('#mapSub').textContent = 'erro: ' + e.message; }
 }
-function closeMap() { $('#mapView').classList.remove('open'); }
 
 function layoutNodes(nodes) {
   const caps = [7, 13, 20, 28];
@@ -578,7 +609,7 @@ function renderMap(d) {
     <g class="node ${nd.status}" data-url="${esc(nd.url)}" data-name="${esc(nd.name)}" data-port="${nd.port}" data-status="${nd.status}" transform="translate(${nd.x.toFixed(1)} ${nd.y.toFixed(1)})">
       <circle class="halo ${nd.status}" r="26"></circle>
       <circle class="ndot" r="16"></circle>
-      <text text-anchor="middle" dy="5.5" font-size="15">${nd.icon}</text>
+      <g class="nico" transform="translate(-9 -9) scale(.75)">${nodeIcon(nd.svg)}</g>
       <text class="lbl" text-anchor="middle" y="38" font-size="11">${esc(shortName(nd.name))}</text>
       <text class="lbl" text-anchor="middle" y="51" font-size="9.5" style="fill:var(--dim)">:${nd.port}</text>
     </g>`).join('');
@@ -586,7 +617,7 @@ function renderMap(d) {
   const core = `<g class="core ${c.health}">
       <circle class="core-halo" r="62"></circle>
       <circle class="core-dot" r="42"></circle>
-      <text text-anchor="middle" dy="2" font-size="26">🎛️</text>
+      <g class="core-ico" transform="translate(-18 -18) scale(1.5)">${ICONS.server}</g>
       <text class="core-lbl" text-anchor="middle" y="64" font-size="13">${esc(c.name)}</text>
     </g>`;
 
@@ -648,11 +679,10 @@ function tapNode(g) {
   S.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.12 : 0.89, { x: e.clientX, y: e.clientY }); }, { passive: false });
 })();
 
-$('#openMap').addEventListener('click', openMap);
-$('#mapClose').addEventListener('click', closeMap);
 $('#mapZoomIn').addEventListener('click', () => window._mapZoom(1.25));
 $('#mapZoomOut').addEventListener('click', () => window._mapZoom(0.8));
 $('#mapReset').addEventListener('click', () => { mapState.scale = 1; mapState.tx = 0; mapState.ty = 0; applyMapTransform(); });
+let _rsz; window.addEventListener('resize', () => { clearTimeout(_rsz); _rsz = setTimeout(() => { if (current === 'map') renderMapView(); }, 250); });
 
 // ── Service worker ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

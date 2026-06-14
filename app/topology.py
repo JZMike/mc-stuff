@@ -22,7 +22,7 @@ async def build() -> dict:
     seen = {a["port"] for a in apps}
     nodes = [{
         "name": a["name"], "port": a["port"], "url": a["url"], "status": "up",
-        "icon": a.get("icon", "🔌"), "critical": a.get("critical"),
+        "icon": a.get("icon", "🔌"), "svg": a.get("svg", "generic"), "critical": a.get("critical"),
         "kind": a.get("source", "host"),
     } for a in apps]
 
@@ -42,7 +42,8 @@ async def build() -> dict:
         nodes.append({
             "name": ct["name"], "port": port,
             "url": f"https://{config.TAILSCALE_HOST}:{port}", "status": "down",
-            "icon": meta["icon"], "critical": meta["critical"], "kind": "docker",
+            "icon": meta["icon"], "svg": meta.get("svg", "generic"),
+            "critical": meta["critical"], "kind": "docker",
         })
 
     snap = system.overview()
