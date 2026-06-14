@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0a0d13" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MikeCommand" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>MikeCommand</title>
+</head>
+<body>
+  <header class="appbar">
+    <div class="appbar-row">
+      <div class="brand">
+        <div class="logo">🎛️</div>
+        <div>
+          <h1>MikeCommand</h1>
+          <div class="sub" id="hostSub">MikeServer</div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div style="text-align:right">
+        <div class="row" style="justify-content:flex-end;gap:7px">
+          <span class="statusdot" id="statusDot"></span>
+          <span class="muted" id="statusText" style="font-size:12px">online</span>
+        </div>
+        <div class="sync" id="syncText">a ligar…</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ░░ VISÃO ░░ -->
+    <section class="view active" id="view-overview">
+      <div id="installBanner"></div>
+      <div class="grid grid-2" id="gauges"></div>
+      <div class="grid" style="margin-top:12px" id="overviewExtra"></div>
+    </section>
+
+    <!-- ░░ DOCKER ░░ -->
+    <section class="view" id="view-docker">
+      <div class="view-title">Containers Docker</div>
+      <div class="list" id="containerList"><div class="skeleton" style="height:60px"></div></div>
+    </section>
+
+    <!-- ░░ SISTEMA ░░ -->
+    <section class="view" id="view-system">
+      <div class="view-title">Sistema & Host</div>
+      <div id="hostCard"></div>
+      <div class="view-title" style="margin-top:18px">Processos</div>
+      <div class="card" style="padding:12px">
+        <div class="btn-row" style="margin-bottom:10px">
+          <button class="btn" id="procCpu" style="flex:1">Por CPU</button>
+          <button class="btn" id="procMem" style="flex:1">Por RAM</button>
+        </div>
+        <div id="procList"></div>
+      </div>
+      <div class="view-title" style="margin-top:18px">Energia</div>
+      <div class="card">
+        <div class="row between">
+          <div>
+            <div style="font-weight:650">Reiniciar a VM Debian</div>
+            <div class="dim" style="font-size:12.5px;margin-top:2px">Reboot do SO. Sobe sozinho (Docker unless-stopped).</div>
+          </div>
+        </div>
+        <button class="btn danger block" id="rebootBtn" style="margin-top:14px">⏻ Reiniciar VM…</button>
+      </div>
+    </section>
+
+    <!-- ░░ COMANDOS ░░ -->
+    <section class="view" id="view-commands">
+      <div class="view-title">Comandos rápidos</div>
+      <div id="cmdHint"></div>
+      <div class="list" id="cmdList"></div>
+    </section>
+
+    <!-- ░░ APPS ░░ -->
+    <section class="view" id="view-apps">
+      <div class="view-title">Apps via Tailscale</div>
+      <div class="list" id="appList"><div class="skeleton" style="height:60px"></div></div>
+    </section>
+
+    <!-- ░░ ALERTAS ░░ -->
+    <section class="view" id="view-alerts">
+      <div class="view-title">Alertas & Push</div>
+      <div id="alertConfig"></div>
+      <div class="view-title" style="margin-top:18px">Histórico</div>
+      <div class="list" id="alertHistory"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-view="overview">
+      <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zM13 21h8v-6h-8zM13 3v8h8V3zM3 21h8v-6H3z"/></svg>Visão
+    </button>
+    <button class="tab" data-view="docker">
+      <svg viewBox="0 0 24 24"><rect x="3" y="10" width="4" height="4"/><rect x="8" y="10" width="4" height="4"/><rect x="13" y="10" width="4" height="4"/><rect x="8" y="5" width="4" height="4"/><path d="M2 14c2 4 7 4 10 2 1.5-1 2-3 2-4M18 9c1.5 0 2.5 1 2.5 1"/></svg>Docker
+    </button>
+    <button class="tab" data-view="system">
+      <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>Sistema
+    </button>
+    <button class="tab" data-view="commands">
+      <svg viewBox="0 0 24 24"><path d="M4 5l6 7-6 7M12 19h8"/></svg>Comandos
+    </button>
+    <button class="tab" data-view="apps">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Apps
+    </button>
+    <button class="tab" data-view="alerts">
+      <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>Alertas
+    </button>
+  </nav>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet"></div>
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

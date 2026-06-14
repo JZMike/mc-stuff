@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# nsenter (util-linux) é preciso para executar ações no host (reboot, comandos)
+RUN apt-get update && apt-get install -y --no-install-recommends util-linux \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

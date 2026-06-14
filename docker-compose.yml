@@ -1,16 +1,19 @@
 services:
-  mc-stuff:
+  mikecommand:
     build:
       context: .
-    container_name: mc-stuff
+    container_name: mikecommand
     restart: unless-stopped
     env_file:
       - .env
-    expose:
-      - "5700"
-    networks:
-      - mc-stuff-net
-
-networks:
-  mc-stuff-net:
-    driver: bridge
+    # Acesso total ao host: ver métricas reais, processos, temperatura e poder agir.
+    # É o teu próprio servidor, atrás de Tailscale — é o trade-off assumido.
+    pid: host                # ver processos do host + permitir nsenter no PID 1
+    network_mode: host       # bind direto em :5700 do host e ver portas à escuta
+    privileged: true         # sensores de temperatura + reboot/comandos no host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # controlar containers
+      - /:/host:ro                                   # disco + SO do host (read-only)
+      - /sys:/host/sys:ro                            # sensores de temperatura
+    environment:
+      - HOST_ROOT=/host
