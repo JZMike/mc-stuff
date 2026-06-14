@@ -131,14 +131,42 @@ window.openContainer = function (ct) {
   openSheet(`
     <h2>${esc(ct.name)}</h2>
     <div class="dim" style="font-size:13px;margin-bottom:12px">${esc(ct.image)} · ${esc(ct.status)}</div>
-    <div id="ctStats" class="grid grid-2" style="margin-bottom:14px"></div>
+    <div id="ctHelper"><div class="skeleton" style="height:90px;border-radius:14px"></div></div>
+    <div id="ctStats" class="grid grid-2" style="margin:14px 0"></div>
     <div class="btn-row">${acts.map(([a, l, k]) =>
       `<button class="btn ${k}" style="flex:1" onclick="containerAction('${ct.id}','${a}',this)">${l}</button>`).join('')}</div>
     <button class="btn block" style="margin-top:10px" onclick="loadLogs('${ct.id}',this)">📜 Ver logs</button>
     ${ct.compose_workdir ? `<div class="dim mono" style="font-size:11.5px;margin-top:14px">📁 ${esc(ct.compose_workdir)}</div>` : ''}
     <div id="logArea" style="margin-top:12px"></div>`);
+  loadHelper(ct.id);
   if (ct.state === 'running') loadStats(ct.id);
 };
+const CRIT = {
+  alta: ['crit', '🔴 Crítico'], media: ['warn', '🟠 Importante'],
+  baixa: ['ok', '🟢 Não-crítico'], desconhecida: ['warn', '❓ A triar'],
+};
+window.loadHelper = async function (id) {
+  try {
+    const d = await api(`/containers/${id}/inspect`);
+    if (!d.ok) { $('#ctHelper').innerHTML = ''; return; }
+    const h = d.helper; const [cls, label] = CRIT[h.critical] || CRIT.desconhecida;
+    const urls = (d.urls || []).map(u => `<a class="btn primary" style="flex:1" href="${esc(u.url)}" target="_blank" rel="noopener">↗ Abrir :${u.port}</a>`).join('');
+    const meta = [
+      d.health ? `saúde: ${esc(d.health)}` : null,
+      `restarts: ${d.restart_count}`,
+      d.mounts ? `${d.mounts} volume(s)` : null,
+      d.ports.length ? 'porta ' + d.ports.map(p => p.public).join(', ') : 'sem porta exposta',
+    ].filter(Boolean).join(' · ');
+    $('#ctHelper').innerHTML = `<div class="card" style="border-color:${cls === 'crit' ? 'rgba(251,113,133,.3)' : cls === 'warn' ? 'rgba(251,191,36,.25)' : 'var(--line)'}">
+      <div class="row between"><div class="row" style="gap:9px"><span class="ico">${h.icon}</span><span style="font-weight:650">${esc(h.what)}</span></div><span class="pill ${cls}">${label}</span></div>
+      ${h.purpose ? `<div class="muted" style="font-size:13px;margin-top:8px">${esc(h.purpose)}</div>` : ''}
+      <div style="font-size:12.5px;margin-top:8px"><span class="dim">Se desligar:</span> ${mdBold(esc(h.impact))}</div>
+      <div class="dim mono" style="font-size:11px;margin-top:10px">${meta}</div>
+      ${urls ? `<div class="btn-row" style="margin-top:12px">${urls}</div>` : ''}
+    </div>`;
+  } catch { $('#ctHelper').innerHTML = ''; }
+};
+const mdBold = (s) => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 window.loadStats = async function (id) {
   try {
     const s = await api(`/containers/${id}/stats`);
@@ -338,8 +366,9 @@ async function renderApps() {
   $('#appList').innerHTML = d.apps.map(a => `<a class="item" href="${esc(a.url)}" target="_blank" rel="noopener">
     <span class="ico">${a.icon}</span>
     <div class="grow"><div class="name">${esc(a.name)}</div>
-      <div class="meta">:${a.port}${a.path ? ' · ' + esc(a.path) : a.container ? ' · ' + esc(a.container) : a.process ? ' · ' + esc(a.process) : ''}</div></div>
-    <span class="dot ${a.state === 'running' || a.state === 'listen' ? (a.state === 'running' ? 'running' : 'listen') : 'exited'}"></span>
+      <div class="meta">${a.desc ? esc(a.desc) : ':' + a.port + (a.path ? ' · ' + esc(a.path) : a.container ? ' · ' + esc(a.container) : a.process ? ' · ' + esc(a.process) : '')}</div></div>
+    <span class="pill" style="font-size:10px">:${a.port}</span>
+    <span class="dot ${a.state === 'running' ? 'running' : a.state === 'listen' ? 'listen' : 'exited'}"></span>
     <span class="chev">↗</span></a>`).join('') || emptyState('🔌', 'Sem apps', 'Nenhuma porta detetada.');
   markSync();
 }
@@ -421,6 +450,7 @@ $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
 $('#procCpu').addEventListener('click', () => renderProcs('cpu'));
 $('#procMem').addEventListener('click', () => renderProcs('mem'));
 $('#rebootBtn').addEventListener('click', confirmReboot);
+$('#goApps').addEventListener('click', () => go('apps'));
 $('#claudeRefresh').addEventListener('click', claudeRefreshStatus);
 $('#claudeList').addEventListener('click', (e) => claudeListSessions(e.currentTarget));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(current); });

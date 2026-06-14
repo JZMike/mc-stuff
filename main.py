@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import (
-    actions, alerts, claude_sessions, config, docker_api, infra, ports, system, telegram,
+    actions, alerts, catalog, claude_sessions, config, docker_api, infra, ports, system, telegram,
 )
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -90,6 +90,19 @@ async def api_container_action(cid: str, action: str):
     res = await docker_api.container_action(cid, action)
     code = 200 if res.get("ok") else 400
     return JSONResponse(res, status_code=code)
+
+
+@app.get("/api/containers/{cid}/inspect")
+async def api_container_inspect(cid: str):
+    """Detalhe + 'helper' de triagem (o que é, criticidade, impacto) + URLs Tailscale."""
+    d = await docker_api.inspect(cid)
+    if not d.get("ok"):
+        return JSONResponse(d, status_code=400)
+    meta = catalog.describe(d["name"], d["image"], d.get("labels"))
+    host = config.TAILSCALE_HOST
+    d["urls"] = [{"port": p["public"], "url": f"https://{host}:{p['public']}"} for p in d["ports"]]
+    d.pop("labels", None)  # não devolver labels em cru ao cliente
+    return {**d, "helper": meta}
 
 
 @app.get("/api/containers/{cid}/stats")

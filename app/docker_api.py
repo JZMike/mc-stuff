@@ -98,6 +98,46 @@ async def container_action(cid: str, action: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def inspect(cid: str) -> dict:
+    """Detalhe de um container — APENAS campos seguros (nunca Config.Env/segredos)."""
+    if not _socket_exists():
+        return {"ok": False, "error": "docker.sock indisponível"}
+    try:
+        async with _client() as c:
+            r = await c.get(f"/containers/{cid}/json")
+            r.raise_for_status()
+            d = r.json()
+    except (httpx.HTTPError, OSError) as e:
+        return {"ok": False, "error": str(e)}
+    state = d.get("State") or {}
+    cfg = d.get("Config") or {}
+    labels = cfg.get("Labels") or {}
+    # portas publicadas
+    ports = []
+    for priv, binds in ((d.get("NetworkSettings") or {}).get("Ports") or {}).items():
+        for b in (binds or []):
+            if b.get("HostPort"):
+                ports.append({"private": priv, "public": int(b["HostPort"])})
+    seen = set()
+    ports = [p for p in ports if not (p["public"] in seen or seen.add(p["public"]))]
+    return {
+        "ok": True,
+        "name": (d.get("Name") or "").lstrip("/"),
+        "image": cfg.get("Image", ""),
+        "state": state.get("Status", "?"),
+        "running": state.get("Running", False),
+        "health": ((state.get("Health") or {}).get("Status")),
+        "restart_count": d.get("RestartCount", 0),
+        "created": d.get("Created"),
+        "started_at": state.get("StartedAt"),
+        "ports": sorted(ports, key=lambda x: x["public"]),
+        "mounts": len(d.get("Mounts") or []),
+        "compose_project": labels.get("com.docker.compose.project"),
+        "compose_workdir": labels.get("com.docker.compose.project.working_dir"),
+        "labels": labels,  # usado pelo catálogo (cockpit.*); NUNCA Env
+    }
+
+
 async def container_stats(cid: str) -> dict:
     """Snapshot único de CPU%/RAM de um container (stream=false → já traz precpu)."""
     if not _socket_exists():

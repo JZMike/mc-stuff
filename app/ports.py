@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import psutil
 
-from . import config, docker_api
+from . import catalog, config, docker_api
 
 # processos que são ruído (não são "apps" do utilizador)
 _NOISE_PROC = {"docker-proxy", "systemd-resolve", "systemd-resolved"}
@@ -69,14 +69,18 @@ async def discover() -> dict:
     apps = []
     for port, info in sorted(by_port.items()):
         meta = known.get(str(port), {})
-        name = meta.get("name") or info.get("container") or info.get("process") or f"Porta {port}"
+        ref = info.get("container") or info.get("process") or ""
+        name = meta.get("name") or ref or f"Porta {port}"
+        cat = catalog.describe(ref or name, ref)
         apps.append({
             **info,
             "name": name,
-            "icon": meta.get("icon", "🔌"),
+            "icon": meta.get("icon") or (cat["icon"] if cat["known"] else "🔌"),
             "path": info.get("path") or meta.get("path", ""),
             "url": f"https://{host}:{port}",
             "known": bool(meta),
+            "desc": cat["what"] if cat["known"] else "",
+            "critical": cat["critical"] if cat["known"] else None,
         })
 
     apps.sort(key=lambda a: (not a["known"], a["source"] != "docker", a["port"]))
