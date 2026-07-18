@@ -25,6 +25,7 @@
         </div>
       </div>
       <div class="spacer"></div>
+      <button class="iconbtn" id="palBtn" aria-label="Pesquisa global (command palette)">⌕</button>
       <div style="text-align:right">
         <div class="row" style="justify-content:flex-end;gap:7px">
           <span class="statusdot" id="statusDot"></span>
@@ -39,6 +40,7 @@
     <!-- ░░ HOME (vista por defeito) ░░ -->
     <section class="view active" id="view-home" role="tabpanel" aria-label="Home">
       <div id="installBanner"></div>
+      <div id="onboard"></div>
       <div id="heroHealth"><div class="skeleton" style="height:76px"></div></div>
       <div id="attention"></div>
       <div class="grid grid-3" id="gauges" style="margin-top:12px"></div>
@@ -66,6 +68,17 @@
       <details class="acc" open>
         <summary>Sistema &amp; Host</summary>
         <div id="hostCard"></div>
+      </details>
+      <details class="acc">
+        <summary>Histórico · CPU · RAM · Temp</summary>
+        <div class="card" style="padding:12px">
+          <div class="btn-row" style="margin-bottom:10px">
+            <button class="btn hwin" data-min="60" style="flex:1">1h</button>
+            <button class="btn hwin" data-min="360" style="flex:1">6h</button>
+            <button class="btn hwin" data-min="1440" style="flex:1">24h</button>
+          </div>
+          <div id="histChart"></div>
+        </div>
       </details>
       <details class="acc">
         <summary>Tailscale &amp; acesso</summary>
@@ -153,6 +166,13 @@
       <button class="map-btn" id="mapZoomIn" aria-label="Aproximar">＋</button>
       <button class="map-btn" id="mapZoomOut" aria-label="Afastar">－</button>
       <button class="map-btn" id="mapReset" aria-label="Repor vista">⟲</button>
+    </div>
+  </div>
+
+  <div class="palette" id="palette" hidden>
+    <div class="pal-box" role="dialog" aria-label="Pesquisa global">
+      <input id="palInput" type="search" placeholder="Saltar para… containers, apps, comandos" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <div class="pal-list" id="palList" role="listbox"></div>
     </div>
   </div>
 

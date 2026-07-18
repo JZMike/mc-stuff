@@ -84,7 +84,16 @@ const fact = (l, v) => `<div><div class="kpi-label">${l}</div><div style="font-w
 const _hist = { cpu: [], mem: [], disk: [] };
 const _push = (k, v) => { const a = _hist[k]; if (v != null) { a.push(v); if (a.length > 40) a.shift(); } };
 
+let _histSeeded = false;
 async function renderHome() {
+  // seed das sparklines a partir do histórico do servidor (sobrevive a reloads)
+  if (!_histSeeded) {
+    _histSeeded = true;
+    try {
+      const h = await api('/metrics/history?minutes=30');
+      h.points.forEach(p => { _push('cpu', p.cpu); _push('mem', p.mem); _push('disk', p.disk); });
+    } catch {}
+  }
   const d = await api('/overview');
   const cpu = d.cpu.percent, mem = d.memory.percent, disk = d.disk.percent;
   _push('cpu', cpu); _push('mem', mem); _push('disk', disk);
@@ -126,6 +135,12 @@ function heroState(d) {
 }
 
 function drawHome(d) {
+  // onboarding 1ª vez — explica a Home e onde vive o mapa
+  if (!localStorage.getItem('mc_onboarded')) {
+    $('#onboard').innerHTML = `<div class="install">👋 <div><b>Bem-vindo ao cockpit.</b> Esta é a Home — a saúde do servidor num relance. O mapa vive em <b>Infra → Mapa</b>; comandos e sessões Claude em <b>Automação</b>.</div>
+      <button class="x" id="onboardX" aria-label="Dispensar boas-vindas">✕</button></div>`;
+    $('#onboardX').onclick = () => { localStorage.setItem('mc_onboarded', '1'); $('#onboard').innerHTML = ''; };
+  }
   const hs = heroState(d);
   $('#heroHealth').innerHTML = `<div class="hero ${hs.cls}">
     <div class="hero-ico" aria-hidden="true">${hs.icon}</div>
@@ -186,13 +201,13 @@ function drawMapPreview() {
 }
 window.openFullMap = function () { setSeg('map'); go('infra'); };
 
-// ══ DOCKER ═══════════════════════════════════════════════════════════════════
+// ══ DOCKER (agrupado por stack compose, com ações em lote) ═══════════════════
 async function renderDocker() {
   const d = await api('/containers');
   const el = $('#containerList');
   if (!d.available) { el.innerHTML = emptyState('🐳', 'Docker indisponível', esc(d.error || 'docker.sock não acessível.')); return; }
   if (!d.containers.length) { el.innerHTML = emptyState('🐳', 'Sem containers', 'Nada a correr.'); return; }
-  el.innerHTML = d.containers.map(ct => {
+  const item = (ct) => {
     const ports = ct.ports.map(p => p.public).filter(Boolean).join(', ');
     return `<button class="item" onclick='openContainer(${JSON.stringify(ct).replace(/'/g, "&#39;")})'>
       <span class="dot ${ct.state}"></span>
@@ -200,9 +215,39 @@ async function renderDocker() {
         <div class="meta">${esc(ct.image)}${ports ? ' · :' + ports : ''}</div></div>
       <span class="pill ${ct.state === 'running' ? 'ok' : ct.state === 'paused' ? 'warn' : 'crit'}">${esc(ct.state)}</span>
       <span class="chev">›</span></button>`;
+  };
+  // agrupar por projeto compose; containers soltos ficam num grupo próprio
+  const groups = new Map();
+  d.containers.forEach(ct => {
+    const k = ct.compose_project || '';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(ct);
+  });
+  const solo = groups.size === 1 && groups.has('');
+  el.innerHTML = [...groups.entries()].map(([proj, cs]) => {
+    const head = solo ? '' : proj
+      ? `<div class="stackhead"><span class="stackname">📦 ${esc(proj)}</span><span class="dim" style="font-size:12px">${cs.length}</span>
+          <button class="btn stackbtn" onclick="stackRestart('${esc(proj)}',this)">↻ stack</button></div>`
+      : `<div class="stackhead"><span class="stackname">sem stack</span></div>`;
+    return head + cs.map(item).join('');
   }).join('');
   markSync();
 }
+window.stackRestart = async function (proj, btn) {
+  // dois toques: o primeiro arma, o segundo confirma (ação em lote)
+  if (btn.dataset.arm !== '1') {
+    btn.dataset.arm = '1'; btn.textContent = 'confirmar ↻'; btn.classList.add('danger');
+    setTimeout(() => { if (btn.isConnected) { btn.dataset.arm = ''; btn.textContent = '↻ stack'; btn.classList.remove('danger'); } }, 3500);
+    return;
+  }
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await api(`/stacks/${encodeURIComponent(proj)}/restart`, { method: 'POST' });
+    const n = (r.results || []).filter(x => x.ok).length;
+    toast(`Stack ${proj}: ${n} reiniciado${n === 1 ? '' : 's'}`, 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  setTimeout(renderDocker, 800);
+};
 
 window.openContainer = function (ct) {
   const acts = ct.state === 'running'
@@ -217,7 +262,10 @@ window.openContainer = function (ct) {
     <div id="ctStats" class="grid grid-2" style="margin:14px 0"></div>
     <div class="btn-row">${acts.map(([a, l, k]) =>
       `<button class="btn ${k}" style="flex:1" onclick="containerAction('${ct.id}','${a}',this)">${l}</button>`).join('')}</div>
-    <button class="btn block" style="margin-top:10px" onclick="loadLogs('${ct.id}',this)">📜 Ver logs</button>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn" style="flex:1" onclick="loadLogs('${ct.id}',this)">📜 Logs</button>
+      <button class="btn" style="flex:1" onclick="toggleLiveLogs('${ct.id}',this)">▶ Ao vivo</button>
+    </div>
     ${ct.compose_workdir ? `<div class="dim mono" style="font-size:11.5px;margin-top:14px">📁 ${esc(ct.compose_workdir)}</div>` : ''}
     <div id="logArea" style="margin-top:12px"></div>
     ${ct.state !== 'running' ? `<div id="rmZone" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
@@ -287,10 +335,34 @@ window.containerAction = async function (id, action, btn) {
   catch (e) { toast(e.message, 'err'); btn.disabled = false; btn.textContent = old; }
 };
 window.loadLogs = async function (id, btn) {
+  stopLiveLogs();
   btn.disabled = true; btn.textContent = 'a carregar…';
   try { const d = await api(`/containers/${id}/logs?tail=200`); $('#logArea').innerHTML = `<div class="logbox">${esc(d.logs || '(vazio)')}</div>`; }
   catch (e) { toast(e.message, 'err'); }
-  btn.disabled = false; btn.textContent = '📜 Atualizar logs';
+  btn.disabled = false; btn.textContent = '📜 Atualizar';
+};
+
+// ── Logs ao vivo (SSE) — streaming em vez de snapshot + refresh manual ──────
+let _es = null, _esBtn = null;
+function stopLiveLogs() {
+  if (_es) { _es.close(); _es = null; }
+  if (_esBtn && _esBtn.isConnected) _esBtn.textContent = '▶ Ao vivo';
+  _esBtn = null;
+}
+window.toggleLiveLogs = function (id, btn) {
+  if (_es) { stopLiveLogs(); return; }
+  $('#logArea').innerHTML = `<div class="logbox" id="liveLog" style="max-height:32vh">a ligar ao stream…\n</div>`;
+  const box = $('#liveLog');
+  _es = new EventSource(`/api/containers/${id}/logs/stream?tail=100`);
+  _esBtn = btn; btn.textContent = '⏸ Parar';
+  let first = true;
+  _es.onmessage = (ev) => {
+    if (first) { box.textContent = ''; first = false; }
+    box.textContent += ev.data + '\n';
+    if (box.textContent.length > 60000) box.textContent = box.textContent.slice(-45000);
+    box.scrollTop = box.scrollHeight;
+  };
+  _es.onerror = () => { stopLiveLogs(); };
 };
 
 // ══ SISTEMA ══════════════════════════════════════════════════════════════════
@@ -301,8 +373,40 @@ async function renderSystem() {
       <div><div style="font-weight:680;font-size:16px">${esc(h.server_name)}</div><div class="dim" style="font-size:12.5px">${esc(h.os)}</div></div></div>
     ${kv('CPU', h.cpu_model)}${kv('Núcleos', h.cores)}${kv('RAM', fmtBytes(h.ram_total))}
     ${kv('Kernel', h.kernel)}${kv('Arquitetura', h.arch)}${kv('Tailscale', h.tailscale_host)}</div>`;
-  renderTailscale(); renderBackups(); renderProcs(procSort);
+  renderTailscale(); renderBackups(); renderProcs(procSort); renderHistory();
 }
+
+// ── Histórico de métricas (gráfico SVG leve, sem dependências) ───────────────
+let histMin = 60;
+async function renderHistory() {
+  $$('.hwin').forEach(b => { b.classList.toggle('primary', +b.dataset.min === histMin); });
+  const el = $('#histChart');
+  try {
+    const d = await api(`/metrics/history?minutes=${histMin}`);
+    const pts = d.points || [];
+    if (pts.length < 2) { el.innerHTML = `<div class="empty" style="padding:12px">Ainda a recolher amostras — volta daqui a uns minutos.</div>`; return; }
+    const W = 320, H = 120;
+    const line = (key, color, max = 100) => {
+      if (!pts.some(p => p[key] != null)) return '';
+      const path = pts.map((p, i) => p[key] == null ? null :
+        `${(i / (pts.length - 1) * W).toFixed(1)},${(H - 6 - Math.min(1, p[key] / max) * (H - 14)).toFixed(1)}`)
+        .filter(Boolean).join(' ');
+      return `<polyline points="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+    };
+    const fmt = (ts) => new Date(ts * 1000).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block" role="img" aria-label="Gráfico de CPU, RAM e temperatura">
+        <line x1="0" y1="${H - 6}" x2="${W}" y2="${H - 6}" stroke="var(--line-2)"/>
+        <line x1="0" y1="${H - 6 - (H - 14) / 2}" x2="${W}" y2="${H - 6 - (H - 14) / 2}" stroke="var(--line)" stroke-dasharray="3 6"/>
+        ${line('cpu', 'var(--accent)')}${line('mem', 'var(--info)')}${line('temp', 'var(--warn)', 110)}
+      </svg>
+      <div class="row between" style="margin-top:6px">
+        <span class="dim" style="font-size:12px">${fmt(pts[0].ts)}</span>
+        <span style="font-size:12px"><span style="color:var(--accent)">■</span> CPU&nbsp; <span style="color:var(--info)">■</span> RAM&nbsp; <span style="color:var(--warn)">■</span> Temp</span>
+        <span class="dim" style="font-size:12px">${fmt(pts[pts.length - 1].ts)}</span>
+      </div>`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="padding:12px">${esc(e.message)}</div>`; }
+}
+$$('.hwin').forEach(b => b.addEventListener('click', () => { histMin = +b.dataset.min; renderHistory(); }));
 async function renderTailscale() {
   const el = $('#tailscaleCard');
   try {
@@ -430,6 +534,7 @@ function drawClaude() {
         <button class="btn primary" style="flex:1.2" onclick="claudeAct('${p.name}','start',this)">▶ Start</button>
         <button class="btn" style="flex:1.2" onclick="claudeAct('${p.name}','restart',this)">↻ Restart</button>
         <button class="btn danger" style="flex:1" onclick="claudeAct('${p.name}','stop',this)">⏹ Stop</button>
+        <button class="btn" style="flex:1" onclick="claudeRC('${p.name}',this)" aria-label="Remote control de claude-${esc(p.name)}">🔗 RC</button>
       </div></div>`;
   }).join('');
 }
@@ -457,6 +562,25 @@ async function claudeStatusOne(project) {
     drawClaude();
   } catch {}
 }
+// ── Claude Remote Control — deep-link para assumir a sessão na app ──────────
+window.claudeRC = async function (project, btn) {
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '…';
+  try {
+    const d = await api(`/claude/rc/${project}`);
+    openSheet(`<h2>🔗 Remote Control</h2>
+      <div class="muted" style="font-size:13px;margin:6px 0 14px">Assumir a sessão <b class="mono">claude-${esc(project)}</b> na app do Claude:</div>
+      <a class="btn primary block" href="${esc(d.url)}" target="_blank" rel="noopener">↗ Abrir na app do Claude</a>
+      <button class="btn block" style="margin-top:10px" onclick="copyRC(this)" data-url="${esc(d.url)}">📋 Copiar link</button>
+      <div class="logbox" style="margin-top:12px;font-size:11.5px">${esc(d.url)}</div>`);
+  } catch (e) { toast(e.message, 'err'); }
+  btn.disabled = false; btn.textContent = old;
+};
+window.copyRC = function (btn) {
+  navigator.clipboard.writeText(btn.dataset.url)
+    .then(() => toast('Link copiado', 'ok'))
+    .catch(() => toast('Não consegui copiar', 'err'));
+};
+
 async function claudeListSessions(btn) {
   btn.disabled = true; const old = btn.textContent; btn.textContent = '…';
   try {
@@ -512,8 +636,8 @@ window.testAlert = async function (btn) {
 
 // ── Helpers UI ───────────────────────────────────────────────────────────────
 const emptyState = (icon, t, s) => `<div class="empty"><div class="big">${icon}</div><div style="font-weight:600;color:var(--mut)">${t}</div><div style="font-size:13px;margin-top:4px">${s}</div></div>`;
-function openSheet(html) { $('#sheet').innerHTML = `<div class="handle"></div>` + html; $('#sheet').classList.add('open'); $('#scrim').classList.add('open'); }
-function closeSheet() { $('#sheet').classList.remove('open'); $('#scrim').classList.remove('open'); }
+function openSheet(html) { stopLiveLogs(); $('#sheet').innerHTML = `<div class="handle"></div>` + html; $('#sheet').classList.add('open'); $('#scrim').classList.add('open'); }
+function closeSheet() { stopLiveLogs(); $('#sheet').classList.remove('open'); $('#scrim').classList.remove('open'); }
 $('#scrim').addEventListener('click', closeSheet);
 
 let lastSync = 0;
@@ -635,6 +759,67 @@ document.addEventListener('visibilitychange', () => {
     if (fire) { haptic(12); await load(current, { fresh: true }); toast('Atualizado', 'ok'); }
   });
 })();
+
+// ── Command palette — busca global (containers, apps, comandos, sessões) ─────
+const _norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+let palIndex = [];
+async function openPalette() {
+  $('#palette').hidden = false;
+  const inp = $('#palInput'); inp.value = ''; inp.focus();
+  palIndex = [
+    { t: 'Home', k: 'vista', icon: '🏠', run: () => go('home') },
+    { t: 'Docker', k: 'vista', icon: '🐳', run: () => { setSeg('docker'); go('infra'); } },
+    { t: 'Apps', k: 'vista', icon: '🔌', run: () => { setSeg('apps'); go('infra'); } },
+    { t: 'Mapa do servidor', k: 'vista', icon: '🪐', run: () => { setSeg('map'); go('infra'); } },
+    { t: 'Sistema', k: 'vista', icon: '🖥️', run: () => go('system') },
+    { t: 'Automação', k: 'vista', icon: '⚡', run: () => go('auto') },
+    { t: 'Alertas', k: 'vista', icon: '🔔', run: () => go('alerts') },
+  ];
+  drawPal('');
+  const [cs, ap, cm, cl] = await Promise.all([
+    _aux.containers ? Promise.resolve(_aux.containers) : api('/containers').catch(() => null),
+    _aux.apps ? Promise.resolve(_aux.apps) : api('/apps').catch(() => null),
+    api('/commands').catch(() => null),
+    api('/claude/projects').catch(() => null),
+  ]);
+  palIndex.push(
+    ...((cs && cs.containers) || []).map(ct => ({
+      t: ct.name, k: 'container · ' + ct.state, icon: ct.state === 'running' ? '🟢' : '🔴',
+      run: () => { setSeg('docker'); go('infra'); openContainer(ct); },
+    })),
+    ...((ap && ap.apps) || []).map(a => ({
+      t: a.name, k: 'app · :' + a.port, icon: a.icon || '🔌',
+      run: () => { if (a.web && a.url) window.open(a.url, '_blank', 'noopener'); else { setSeg('apps'); go('infra'); } },
+    })),
+    ...((cm && cm.commands) || []).map(c => ({
+      t: c.label, k: 'comando', icon: c.danger ? '⚠️' : '⚡', run: () => go('auto'),
+    })),
+    ...((cl && cl.projects) || []).map(p => ({
+      t: 'claude-' + p.name, k: 'sessão', icon: '✳️', run: () => go('auto'),
+    })),
+  );
+  if (!$('#palette').hidden) drawPal(inp.value);
+}
+function drawPal(q) {
+  const nq = _norm(q);
+  const hits = palIndex.filter(it => !nq || _norm(it.t).includes(nq)).slice(0, 12);
+  $('#palList').innerHTML = hits.map(it => `<button class="pal-item" data-i="${palIndex.indexOf(it)}" role="option">
+      <span aria-hidden="true">${it.icon}</span><span class="grow">${esc(it.t)}</span><span class="dim" style="font-size:12px">${esc(it.k)}</span>
+    </button>`).join('') || `<div class="empty" style="padding:16px">sem resultados</div>`;
+  $$('.pal-item').forEach(b => b.addEventListener('click', () => { closePalette(); palIndex[+b.dataset.i].run(); }));
+}
+function closePalette() { $('#palette').hidden = true; }
+$('#palBtn').addEventListener('click', openPalette);
+$('#palInput').addEventListener('input', (e) => drawPal(e.target.value));
+$('#palInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { const f = $('.pal-item'); if (f) f.click(); }
+});
+$('#palette').addEventListener('click', (e) => { if (e.target.id === 'palette') closePalette(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closePalette(); closeSheet(); }
+  else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
+  else if (e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); openPalette(); }
+});
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 let SERVER = 'MikeServer';

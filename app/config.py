@@ -51,6 +51,9 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 POLL_OVERVIEW_MS = _int("POLL_OVERVIEW_MS", 4000)
 POLL_CONTAINERS_MS = _int("POLL_CONTAINERS_MS", 6000)
 
+# ── Histórico de métricas (ring buffer em memória) ───────────────────────────
+METRICS_SAMPLE_SECONDS = _int("METRICS_SAMPLE_SECONDS", 30)
+
 # ── Limiares de alerta ───────────────────────────────────────────────────────
 ALERT_CPU_PCT = _float("ALERT_CPU_PCT", 90.0)
 ALERT_MEM_PCT = _float("ALERT_MEM_PCT", 90.0)

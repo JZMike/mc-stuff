@@ -16,7 +16,7 @@ from . import actions, config
 
 log = logging.getLogger("mikecockpit.claude")
 
-_VERBS = {"projects", "list", "status", "start", "stop", "restart"}
+_VERBS = {"projects", "list", "status", "start", "stop", "restart", "rc"}
 _ONLINE_HINTS = ("online", "running", "active", "attached", "up", "alive", "✓", "●")
 _OFFLINE_HINTS = ("offline", "stopped", "not running", "no session", "inactive",
                   "down", "dead", "missing", "nenhuma", "sem sessão", "não")
@@ -132,3 +132,24 @@ async def restart(project: str) -> dict:
         return {"ok": False, "project": project, "message": res["error"]}
     msg = f"Sessão claude-{project} reiniciada." if res.get("rc") == 0 else (_clean(res) or "Reiniciado.")
     return {"ok": True, "project": project, "message": msg}
+
+
+_URL_RE = re.compile(r"https?://\S+")
+
+
+async def remote_control(project: str) -> dict:
+    """Deep-link para assumir a sessão na app do Claude (mikeclaude rc <proj>).
+
+    Devolve a primeira URL que o mikeclaude imprimir. Se o script (ainda) não
+    suportar o verbo rc, devolve o output em bruto para diagnóstico.
+    """
+    res = await _run("rc", project, timeout=60)
+    if res.get("error"):
+        return {"ok": False, "project": project, "error": res["error"]}
+    out = _clean(res)
+    m = _URL_RE.search(out)
+    if m:
+        return {"ok": True, "project": project, "url": m.group(0).rstrip(".,)"), "detail": out}
+    return {"ok": False, "project": project,
+            "error": "O mikeclaude não devolveu nenhuma URL (o verbo 'rc' está suportado?).",
+            "detail": out[:500]}

@@ -9,12 +9,12 @@ import contextlib
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import (
-    actions, alerts, catalog, claude_sessions, config, docker_api, infra, ports, system,
-    telegram, topology,
+    actions, alerts, catalog, claude_sessions, config, docker_api, infra, metrics, ports,
+    system, telegram, topology,
 )
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -24,7 +24,9 @@ WEB_DIR = Path(__file__).parent / "web"
 async def lifespan(app: FastAPI):
     system.prime_cpu_percent()
     alerts.start()
+    metrics.start()
     yield
+    metrics.stop()
     alerts.stop()
 
 
@@ -56,6 +58,11 @@ async def api_overview():
 @app.get("/api/host")
 async def api_host():
     return system.host_info()
+
+
+@app.get("/api/metrics/history")
+async def api_metrics_history(minutes: int = Query(60, ge=5, le=1440)):
+    return metrics.history(minutes=minutes)
 
 
 @app.get("/api/processes")
@@ -140,6 +147,24 @@ async def api_container_logs(cid: str, tail: int = 200):
     return await docker_api.container_logs(cid, tail=min(tail, 1000))
 
 
+@app.get("/api/containers/{cid}/logs/stream")
+async def api_container_logs_stream(cid: str, tail: int = 100):
+    """Logs ao vivo via SSE — streaming em vez de snapshot + refresh manual."""
+    async def gen():
+        async for text in docker_api.stream_logs(cid, tail=min(tail, 500)):
+            for line in text.splitlines():
+                yield f"data: {line}\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/stacks/{project}/{action}")
+async def api_stack_action(project: str, action: str):
+    """Ação em lote sobre um stack compose (restart/stop/start de todos os containers)."""
+    res = await docker_api.stack_action(project, action)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
 # ── Sistema (reboot) ─────────────────────────────────────────────────────────
 @app.post("/api/system/reboot")
 async def api_reboot(confirm: str = Query("")):
@@ -200,6 +225,13 @@ async def api_claude_stop(project: str):
 @app.post("/api/claude/restart/{project}")
 async def api_claude_restart(project: str):
     res = await claude_sessions.restart(project)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.get("/api/claude/rc/{project}")
+async def api_claude_rc(project: str):
+    """Deep-link Remote Control — assumir a sessão tmux na app do Claude."""
+    res = await claude_sessions.remote_control(project)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 

@@ -31,14 +31,20 @@ def _record(level: str, key: str, title: str, body: str, pushed: bool) -> dict:
     return item
 
 
-async def _maybe_push(level: str, key: str, title: str, body: str) -> None:
+def mute(key: str, seconds: int = 3600) -> None:
+    """Silencia uma chave de alerta durante N segundos (empurra o cooldown)."""
+    _last_sent[key] = time.time() + seconds - config.ALERT_COOLDOWN_SECONDS
+
+
+async def _maybe_push(level: str, key: str, title: str, body: str,
+                      buttons: list[list[dict]] | None = None) -> None:
     now = time.time()
     # ainda em cooldown → não envia nem regista (evita inundar o histórico)
     if now - _last_sent.get(key, 0) < config.ALERT_COOLDOWN_SECONDS:
         return
     emoji = {"critical": "🔴", "warning": "🟠", "info": "🟢"}.get(level, "🔔")
     text = f"{emoji} <b>{config.SERVER_NAME} · {title}</b>\n{body}"
-    res = await telegram.send(text)
+    res = await telegram.send(text, buttons=buttons)
     ok = res.get("ok", False)
     # sucesso → cooldown completo; falha → re-tentar em ~60s (não arma o cooldown todo)
     retry = min(60, config.ALERT_COOLDOWN_SECONDS)
@@ -76,17 +82,44 @@ async def evaluate_once() -> list[dict]:
         await _maybe_push("critical", "temp", "Temperatura alta", f"CPU a {temp}°C (limiar {config.ALERT_TEMP_C}°C).")
         fired.append("temp")
 
-    # containers caídos
+    # containers caídos — com ações inline no push (agir sem abrir a app)
     dock = await docker_api.list_containers()
     for ct in dock.get("containers", []):
         prev = _prev_container_state.get(ct["name"])
         if prev == "running" and ct["state"] in ("exited", "dead"):
-            await _maybe_push("critical", f"ct:{ct['name']}", "Container caiu",
-                              f"<code>{ct['name']}</code> está <b>{ct['state']}</b> ({ct['status']}).")
-            fired.append(f"ct:{ct['name']}")
+            key = f"ct:{ct['name']}"
+            await _maybe_push("critical", key, "Container caiu",
+                              f"<code>{ct['name']}</code> está <b>{ct['state']}</b> ({ct['status']}).",
+                              buttons=[[
+                                  {"text": "↻ Reiniciar", "callback_data": f"ct:restart:{ct['name']}"},
+                                  {"text": "🔕 Silenciar 1h", "callback_data": f"mute:{key}"},
+                              ]])
+            fired.append(key)
         _prev_container_state[ct["name"]] = ct["state"]
 
     return fired
+
+
+async def _handle_callback(data: str) -> str | None:
+    """Ações dos botões inline do Telegram. Devolve texto de resposta ou None."""
+    if data.startswith("ct:restart:"):
+        name = data.removeprefix("ct:restart:")
+        # o Docker API aceita o nome como id; valida que o container existe primeiro
+        listing = await docker_api.list_containers()
+        known = {c["name"] for c in listing.get("containers", [])}
+        if name not in known:
+            return f"'{name}' não existe."
+        res = await docker_api.container_action(name, "restart")
+        if res.get("ok"):
+            _record("info", f"ct:{name}", "Reiniciado via Telegram",
+                    f"<code>{name}</code> reiniciado a partir do push.", pushed=False)
+            return f"{name} reiniciado ✅"
+        return f"Falhou: {res.get('error', '?')[:120]}"
+    if data.startswith("mute:"):
+        key = data.removeprefix("mute:")
+        mute(key, 3600)
+        return "Silenciado por 1h 🔕"
+    return None
 
 
 async def _loop() -> None:
@@ -110,6 +143,8 @@ def start() -> None:
     global _task
     if _task is None or _task.done():
         _task = asyncio.create_task(_loop())
+    telegram.register_callback_handler(_handle_callback)
+    telegram.start_poller()
 
 
 def stop() -> None:
@@ -117,3 +152,4 @@ def stop() -> None:
     if _task and not _task.done():
         _task.cancel()
     _task = None
+    telegram.stop_poller()

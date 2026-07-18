@@ -196,6 +196,63 @@ async def container_logs(cid: str, tail: int = 200) -> dict:
         return {"ok": False, "error": str(e), "logs": ""}
 
 
+async def stream_logs(cid: str, tail: int = 100):
+    """Segue os logs de um container (follow) e emite linhas de texto.
+
+    Gerador assíncrono para SSE — demultiplexa os frames do Docker à medida
+    que chegam. Termina quando o cliente desliga ou o container pára.
+    """
+    if not _socket_exists():
+        yield "⚠ docker.sock indisponível"
+        return
+    transport = httpx.AsyncHTTPTransport(uds=config.DOCKER_SOCK)
+    buf = b""
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://docker",
+                                     timeout=httpx.Timeout(10.0, read=None)) as c:
+            async with c.stream("GET", f"/containers/{cid}/logs",
+                                params={"stdout": "true", "stderr": "true", "follow": "true",
+                                        "tail": str(tail), "timestamps": "false"}) as r:
+                if r.status_code != 200:
+                    yield f"⚠ HTTP {r.status_code}"
+                    return
+                multiplexed: bool | None = None
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    if multiplexed is None and len(buf) >= 8:
+                        multiplexed = buf[0] in (0, 1, 2) and buf[1] == 0 and buf[2] == 0 and buf[3] == 0
+                    if multiplexed:
+                        while len(buf) >= 8:
+                            size = int.from_bytes(buf[4:8], "big")
+                            if len(buf) < 8 + size:
+                                break
+                            yield buf[8:8 + size].decode("utf-8", "replace")
+                            buf = buf[8 + size:]
+                    elif multiplexed is False:
+                        yield buf.decode("utf-8", "replace")
+                        buf = b""
+    except (httpx.HTTPError, OSError) as e:
+        yield f"⚠ stream terminou: {e}"
+
+
+async def stack_action(project: str, action: str) -> dict:
+    """Ação em lote sobre todos os containers de um projeto compose."""
+    if action not in ("restart", "stop", "start"):
+        return {"ok": False, "error": "ação inválida"}
+    listing = await list_containers()
+    if not listing.get("available"):
+        return {"ok": False, "error": listing.get("error", "docker indisponível")}
+    targets = [ct for ct in listing["containers"] if ct.get("compose_project") == project]
+    if not targets:
+        return {"ok": False, "error": f"stack '{project}' sem containers"}
+    results = []
+    for ct in targets:
+        res = await container_action(ct["id"], action)
+        results.append({"name": ct["name"], "ok": res.get("ok", False), "error": res.get("error")})
+    ok = all(r["ok"] for r in results)
+    return {"ok": ok, "project": project, "action": action, "results": results}
+
+
 def _demux(data: bytes) -> str:
     out = bytearray()
     i = 0

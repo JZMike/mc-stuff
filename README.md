@@ -11,14 +11,18 @@ Não é só leitura — **agir** à distância a partir do telemóvel, via Tails
 | Aba | O que faz |
 |---|---|
 | **Home** | Vista por defeito: hero de saúde global, "precisa de atenção", gauges CPU/RAM/disco com sparklines, preview vivo do mapa, uptime/carga/containers/apps. |
-| **Infra** | Segmented control **Docker · Apps · Mapa**: containers (reiniciar / parar / pausar / logs), auto-discovery de portas → links Tailscale, e o mapa orbital do servidor. |
-| **Sistema** | Acordeão: info do host, Tailscale, backups, top processos (CPU/RAM) e **reboot da VM** (com confirmação escrita). |
-| **Automação** | Allowlist de comandos no host (sync CoreRoom, guardar vault, prune, df…) + gestão de sessões Claude em tmux (Start/Stop/Restart via `~/bin/mikeclaude`, sem sudo). |
+| **Infra** | Segmented control **Docker · Apps · Mapa**: containers agrupados por stack compose (com restart do stack todo), logs snapshot **e ao vivo (SSE)**, auto-discovery de portas → links Tailscale, e o mapa orbital do servidor. |
+| **Sistema** | Acordeão: info do host, **histórico de métricas (CPU/RAM/temp, 1h/6h/24h)**, Tailscale, backups, top processos (CPU/RAM) e **reboot da VM** (com confirmação escrita). |
+| **Automação** | Allowlist de comandos no host (sync CoreRoom, guardar vault, prune, df…) + gestão de sessões Claude em tmux (Start/Stop/Restart/**Remote Control** via `~/bin/mikeclaude`, sem sudo). |
 | **Alertas** | Limiares + estado do Telegram + teste de push + histórico de alertas. |
+
+**Command palette**: botão ⌕ no topo (ou `⌘K` / `/`) — salta para qualquer container, app, comando ou sessão.
 
 ## Notificações push
 Alertas via **Telegram** quando CPU/RAM/disco/temperatura passam o limiar de forma sustentada,
 ou quando um container cai. Configura `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` no `.env`.
+Os alertas de container caído trazem **botões inline** (↻ Reiniciar · 🔕 Silenciar 1h) — agir
+sem abrir a app. O bot só aceita callbacks do `TELEGRAM_CHAT_ID` configurado.
 
 ## Deploy (no MikeServer)
 ```bash
