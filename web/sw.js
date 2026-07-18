@@ -1,9 +1,15 @@
 /* MikeCockpit SW — network-first p/ a shell, nunca cacheia /api (dados sempre frescos). */
-const CACHE = 'mikecockpit-v7';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg'];
+const CACHE = 'mikecockpit-v8';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
+  'icons/icon.svg', 'icons/icon-maskable.svg', 'fonts/inter-latin.woff2'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // Resiliente: um recurso em falta (404/offline) não impede o SW de instalar.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.allSettled(SHELL.map((u) => c.add(u))))
+      .then(() => self.skipWaiting())
+  );
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));

@@ -1,4 +1,15 @@
 /* MikeCommand — design system (dark, mobile-first, zero dependências) */
+
+/* Inter variável (subset latin, self-hosted — offline-first, sem CDNs) */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --bg: #0a0d13;
   --bg-2: #0d111a;
@@ -197,6 +208,7 @@ nav.tabbar {
 #mapSvg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .map-legend { position: absolute; top: calc(var(--safe-t) + 58px); left: 0; right: 0; z-index: 2;
   display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 14px; font-size: 11px; color: var(--mut); pointer-events: none; padding: 0 16px; }
+.map-legend .map-title { flex-basis: 100%; text-align: center; color: var(--txt); font-weight: 700; font-size: 13px; }
 .map-legend .map-sub { color: var(--dim); }
 .map-legend .d { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
 .map-btn { width: 42px; height: 42px; border-radius: 13px; background: rgba(18,24,34,.72); border: 1px solid var(--line-2);

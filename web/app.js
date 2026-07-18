@@ -469,9 +469,18 @@ const RENDER = { overview: renderOverview, docker: renderDocker, system: renderS
 const POLL_MS = { overview: 4000, docker: 7000, apps: 15000, alerts: 12000 };
 let current = 'overview', pollT = null;
 
+const VIEW_ERR = { overview: '#gauges', docker: '#containerList', system: '#hostCard', commands: '#cmdList', claude: '#claudeProjects', apps: '#appList', alerts: '#alertConfig' };
 async function load(view) {
   try { await RENDER[view](); setStatus(true); }
-  catch (e) { setStatus(false); if (view === current) console.warn(view, e.message); }
+  catch (e) {
+    setStatus(false);
+    // guarda de erro visível: nunca deixar a vista em skeleton eterno
+    const el = VIEW_ERR[view] && $(VIEW_ERR[view]);
+    if (el && view === current && !el.querySelector('.item, .card, .gauge')) {
+      el.innerHTML = emptyState('⚠️', 'Sem ligação à API', esc(e.message));
+    }
+    if (view === current) console.warn(view, e.message);
+  }
 }
 function schedule() {
   clearTimeout(pollT);
