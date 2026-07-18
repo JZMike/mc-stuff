@@ -28,15 +28,24 @@ const fmtAgo = (ts) => {
 const colorFor = (pct) => pct >= 90 ? 'var(--crit)' : pct >= 75 ? 'var(--warn)' : 'var(--accent)';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// ── Toast ────────────────────────────────────────────────────────────────────
+// ── Toast + haptics ──────────────────────────────────────────────────────────
+const haptic = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
 let toastT;
 function toast(msg, kind = '') {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast show ' + kind;
+  if (kind === 'ok') haptic(12); else if (kind === 'err') haptic([30, 40, 30]);
   clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', 2600);
 }
 
 // ── Gauge SVG (size ajustável p/ 3-up) ───────────────────────────────────────
-function gauge({ value, label, sub, color, max = 100, suffix = '%', size = 104 }) {
+function sparkline(arr, color, w = 72, h = 20) {
+  if (!arr || arr.length < 2) return '';
+  const max = Math.max(...arr, 1), min = Math.min(...arr, 0);
+  const span = Math.max(max - min, 1);
+  const pts = arr.map((v, i) => `${(i / (arr.length - 1) * w).toFixed(1)},${(h - 2 - (v - min) / span * (h - 4)).toFixed(1)}`).join(' ');
+  return `<svg class="gspark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity=".8"/></svg>`;
+}
+function gauge({ value, label, sub, color, max = 100, suffix = '%', size = 104, spark = null }) {
   const sw = Math.max(6, Math.round(size * 0.085));
   const R = (size - sw) / 2 - 2;
   const c = size / 2, C = 2 * Math.PI * R;
@@ -46,7 +55,7 @@ function gauge({ value, label, sub, color, max = 100, suffix = '%', size = 104 }
   const vf = Math.round(size * 0.25);
   return `<div class="card gauge-card">
     <div class="gauge">
-      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
         <circle class="ring-bg" cx="${c}" cy="${c}" r="${R}" fill="none" stroke-width="${sw}"></circle>
         <circle class="ring-fg" cx="${c}" cy="${c}" r="${R}" fill="none" stroke-width="${sw}"
           stroke="${color}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
@@ -54,6 +63,7 @@ function gauge({ value, label, sub, color, max = 100, suffix = '%', size = 104 }
       <div class="center"><div class="v" style="font-size:${vf}px">${display}<span style="font-size:${Math.round(vf * 0.5)}px;color:var(--dim)">${value == null ? '' : suffix}</span></div><div class="l">${label}</div></div>
     </div>
     ${sub ? `<div class="meta">${sub}</div>` : ''}
+    ${spark ? sparkline(spark, color) : ''}
   </div>`;
 }
 
@@ -66,41 +76,74 @@ function loadHealth(load, cores) {
 }
 
 
-// ══ VISÃO ════════════════════════════════════════════════════════════════════
-const _aux = { t: 0, containers: null, alerts: null, apps: null };
+// ══ HOME ═════════════════════════════════════════════════════════════════════
+const _aux = { t: 0, containers: null, alerts: null, apps: null, map: null };
 const _gb = (b) => (b / 1e9).toFixed(b >= 1e10 ? 0 : 1);
 const fact = (l, v) => `<div><div class="kpi-label">${l}</div><div style="font-weight:650;font-size:14px;margin-top:3px">${v}</div></div>`;
+// séries curtas para as sparklines dos gauges (cliente, leve)
+const _hist = { cpu: [], mem: [], disk: [] };
+const _push = (k, v) => { const a = _hist[k]; if (v != null) { a.push(v); if (a.length > 40) a.shift(); } };
 
-async function renderOverview() {
+async function renderHome() {
   const d = await api('/overview');
   const cpu = d.cpu.percent, mem = d.memory.percent, disk = d.disk.percent;
+  _push('cpu', cpu); _push('mem', mem); _push('disk', disk);
 
   $('#gauges').innerHTML =
-    gauge({ value: cpu, label: 'CPU', sub: `${d.cpu.cores} cores`, color: colorFor(cpu), size: 84 }) +
-    gauge({ value: mem, label: 'RAM', sub: `${_gb(d.memory.used)}/${_gb(d.memory.total)}G`, color: colorFor(mem), size: 84 }) +
-    gauge({ value: disk, label: 'Disco', sub: `${_gb(d.disk.free)}G livres`, color: colorFor(disk), size: 84 });
+    gauge({ value: cpu, label: 'CPU', sub: `${d.cpu.cores} cores`, color: colorFor(cpu), size: 84, spark: _hist.cpu }) +
+    gauge({ value: mem, label: 'RAM', sub: `${_gb(d.memory.used)}/${_gb(d.memory.total)}G`, color: colorFor(mem), size: 84, spark: _hist.mem }) +
+    gauge({ value: disk, label: 'Disco', sub: `${_gb(d.disk.free)}G livres`, color: colorFor(disk), size: 84, spark: _hist.disk });
 
-  // dados auxiliares (containers/alertas/apps) — puxados com menos frequência (leve no N97)
+  // dados auxiliares (containers/alertas/apps/mapa) — puxados com menos frequência (leve no N97)
   if (Date.now() - _aux.t > 11000) {
     _aux.t = Date.now();
-    Promise.all([api('/containers').catch(() => null), api('/alerts').catch(() => null), api('/apps').catch(() => null)])
-      .then(([c, a, ap]) => { _aux.containers = c; _aux.alerts = a; _aux.apps = ap; if (current === 'overview') drawHome(d); });
+    Promise.all([api('/containers').catch(() => null), api('/alerts').catch(() => null),
+                 api('/apps').catch(() => null), api('/map').catch(() => null)])
+      .then(([c, a, ap, m]) => { _aux.containers = c; _aux.alerts = a; _aux.apps = ap; _aux.map = m; if (current === 'home') drawHome(d); });
   }
   drawHome(d);
   markSync();
 }
 
+// ── Hero de saúde global — um estado que resume tudo, antes de qualquer detalhe ──
+function heroState(d) {
+  const now = Date.now() / 1000;
+  const critAlerts = ((_aux.alerts && _aux.alerts.history) || []).filter(a => a.level === 'critical' && now - a.ts < 3600).length;
+  let run = null, total = null, down = 0;
+  if (_aux.containers && _aux.containers.available) {
+    const cs = _aux.containers.containers;
+    total = cs.length; run = cs.filter(x => x.state === 'running').length; down = total - run;
+  }
+  const hot = d.cpu.percent >= 90 || d.memory.percent >= 90 || d.disk.percent >= 90;
+  const warm = d.cpu.percent >= 75 || d.memory.percent >= 75 || d.disk.percent >= 88;
+  let cls = 'ok', icon = '✓', title = 'Tudo saudável';
+  if (critAlerts || hot) { cls = 'crit'; icon = '!'; title = 'Problemas ativos'; }
+  else if (down > 0 || warm) { cls = 'warn'; icon = '△'; title = 'Precisa de atenção'; }
+  const bits = [];
+  if (total != null) bits.push(`${run}/${total} containers`);
+  bits.push(critAlerts ? `${critAlerts} alerta${critAlerts > 1 ? 's' : ''} crítico${critAlerts > 1 ? 's' : ''} (1h)` : '0 alertas ativos');
+  return { cls, icon, title, sub: bits.join(' · ') };
+}
+
 function drawHome(d) {
-  // ── Precisa de atenção (mini-briefing) ──
-  const hist = (_aux.alerts && _aux.alerts.history) ? _aux.alerts.history.slice(0, 4) : [];
-  $('#attention').innerHTML = `<div class="view-title" style="margin:0 2px 8px">Precisa de atenção</div>` +
-    (hist.length
-      ? `<div class="list">` + hist.map(a => `<div class="item">
-          <span class="dot ${a.level === 'critical' ? 'crit' : a.level === 'warning' ? 'warn' : 'ok'}"></span>
-          <div class="grow"><div class="name" style="font-size:13.5px">${esc(a.title)}</div>
-            <div class="meta">${esc((a.body || '').replace(/<[^>]+>/g, ''))}</div></div>
-          <span class="dim" style="font-size:11px">${fmtAgo(a.ts)}</span></div>`).join('') + `</div>`
-      : `<div class="card"><div class="row" style="gap:10px"><span class="dot ok"></span><span class="muted">Tudo calmo — nada a precisar de ti.</span></div></div>`);
+  const hs = heroState(d);
+  $('#heroHealth').innerHTML = `<div class="hero ${hs.cls}">
+    <div class="hero-ico" aria-hidden="true">${hs.icon}</div>
+    <div><div class="hero-title">${hs.title}</div><div class="hero-sub">${hs.sub}</div></div>
+  </div>`;
+
+  // ── Precisa de atenção — só aparece quando há algo; o que está bem recolhe-se ──
+  const now = Date.now() / 1000;
+  const hist = ((_aux.alerts && _aux.alerts.history) || []).filter(a => now - a.ts < 6 * 3600).slice(0, 4);
+  $('#attention').innerHTML = !hist.length ? '' :
+    `<div class="view-title" style="margin:14px 2px 8px">Precisa de atenção</div><div class="list">` +
+    hist.map(a => `<div class="item">
+      <span class="dot ${a.level === 'critical' ? 'crit' : a.level === 'warning' ? 'warn' : 'ok'}"></span>
+      <div class="grow"><div class="name" style="font-size:13.5px">${esc(a.title)}</div>
+        <div class="meta">${esc((a.body || '').replace(/<[^>]+>/g, ''))}</div></div>
+      <span class="dim" style="font-size:12px">${fmtAgo(a.ts)}</span></div>`).join('') + `</div>`;
+
+  drawMapPreview();
 
   // ── Faixa de factos ──
   const [lw, lc] = loadHealth(d.cpu.load[2], d.cpu.cores);
@@ -118,6 +161,30 @@ function drawHome(d) {
     ${fact('Apps', `${appsN} <span class="dim">online</span>`)}
   </div></div>`;
 }
+
+// ── Mapa como preview vivo — cartão clicável que abre a vista completa ──
+function drawMapPreview() {
+  const m = _aux.map;
+  if (!m || !m.nodes) { return; }
+  const W = 300, H = 132, cx = W / 2, cy = H / 2;
+  const n = m.nodes.length || 1;
+  const dots = m.nodes.map((nd, i) => {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const x = cx + Math.cos(ang) * (W * 0.36), y = cy + Math.sin(ang) * (H * 0.36);
+    return `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${cx}" y2="${cy}" stroke="${nd.status === 'up' ? 'var(--ok)' : 'var(--crit)'}" stroke-width="1" stroke-dasharray="2 5" opacity=".4"/>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="#0a0f18" stroke="${nd.status === 'up' ? 'var(--ok)' : 'var(--crit)'}" stroke-width="1.6"/>`;
+  }).join('');
+  const core = `<circle cx="${cx}" cy="${cy}" r="13" fill="#07120f" stroke="var(--accent)" stroke-width="2"/>`;
+  $('#mapPreview').innerHTML = `<button class="card mappre" onclick="openFullMap()" aria-label="Abrir o mapa do servidor">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${dots}${core}</svg>
+    <div class="row between" style="margin-top:8px">
+      <div><div style="font-weight:650;font-size:14px">Mapa do servidor</div>
+        <div class="meta" style="font-size:12px;color:var(--dim)">${m.up}/${m.total} serviços · tocar para abrir</div></div>
+      <span class="pill ok">ao vivo</span>
+    </div>
+  </button>`;
+}
+window.openFullMap = function () { setSeg('map'); go('infra'); };
 
 // ══ DOCKER ═══════════════════════════════════════════════════════════════════
 async function renderDocker() {
@@ -464,19 +531,47 @@ function setStatus(ok) {
   $('#statusText').textContent = ok ? 'online' : 'offline';
 }
 
-// ── Router + polling ─────────────────────────────────────────────────────────
-const RENDER = { overview: renderOverview, docker: renderDocker, system: renderSystem, commands: renderCommands, claude: renderClaude, apps: renderApps, alerts: renderAlerts };
-const POLL_MS = { overview: 4000, docker: 7000, apps: 15000, alerts: 12000 };
-let current = 'overview', pollT = null;
+// ── Infra: segmented control (Docker · Apps · Mapa) ──────────────────────────
+let infraSeg = localStorage.getItem('mc_infra_seg') || 'docker';
+function setSeg(s) { infraSeg = s; localStorage.setItem('mc_infra_seg', s); }
+function applyInfraSeg() {
+  $$('#infraSeg button').forEach(b => {
+    const on = b.dataset.seg === infraSeg;
+    b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on));
+  });
+  $('#mapView').classList.toggle('open', current === 'infra' && infraSeg === 'map');
+  $('#infraDocker').hidden = infraSeg !== 'docker';
+  $('#infraApps').hidden = infraSeg !== 'apps';
+}
+async function renderInfra(opts = {}) {
+  applyInfraSeg();
+  if (infraSeg === 'map') {
+    // só re-renderiza ao entrar (fresh) — o polling não pode fazer reset ao pan/zoom
+    if (opts.fresh || !$('#mapvp')) requestAnimationFrame(renderMapView);
+    return;
+  }
+  if (infraSeg === 'docker') await renderDocker(); else await renderApps();
+}
+async function renderAuto() { await Promise.all([renderCommands(), renderClaude()]); }
 
-const VIEW_ERR = { overview: '#gauges', docker: '#containerList', system: '#hostCard', commands: '#cmdList', claude: '#claudeProjects', apps: '#appList', alerts: '#alertConfig' };
-async function load(view) {
-  try { await RENDER[view](); setStatus(true); }
+// ── Router + polling ─────────────────────────────────────────────────────────
+const RENDER = { home: renderHome, infra: renderInfra, system: renderSystem, auto: renderAuto, alerts: renderAlerts };
+const POLL_MS = { home: 4000, infra: 8000, alerts: 12000 };
+let current = 'home', pollT = null;
+
+const VIEW_ERR = {
+  home: () => '#heroHealth',
+  infra: () => infraSeg === 'apps' ? '#appList' : '#containerList',
+  system: () => '#hostCard', auto: () => '#cmdList', alerts: () => '#alertConfig',
+};
+async function load(view, opts) {
+  try { await RENDER[view](opts || {}); setStatus(true); }
   catch (e) {
     setStatus(false);
     // guarda de erro visível: nunca deixar a vista em skeleton eterno
-    const el = VIEW_ERR[view] && $(VIEW_ERR[view]);
-    if (el && view === current && !el.querySelector('.item, .card, .gauge')) {
+    const sel = VIEW_ERR[view] && VIEW_ERR[view]();
+    const el = sel && $(sel);
+    if (el && view === current && !el.querySelector('.item, .card, .gauge, .hero')) {
       el.innerHTML = emptyState('⚠️', 'Sem ligação à API', esc(e.message));
     }
     if (view === current) console.warn(view, e.message);
@@ -493,29 +588,59 @@ function schedule() {
 }
 function go(view) {
   current = view;
-  const isMap = view === 'map';
-  $('#mapView').classList.toggle('open', isMap);
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
-  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+  $$('.tab').forEach(t => {
+    const on = t.dataset.view === view;
+    t.classList.toggle('active', on); t.setAttribute('aria-selected', String(on));
+  });
+  $('#mapView').classList.toggle('open', view === 'infra' && infraSeg === 'map');
   window.scrollTo({ top: 0 });
-  if (isMap) requestAnimationFrame(renderMapView);
-  else load(view);
+  load(view, { fresh: true });
   schedule();
 }
 $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
+$$('#infraSeg button').forEach(b => b.addEventListener('click', () => { setSeg(b.dataset.seg); load('infra', { fresh: true }); schedule(); }));
 $('#procCpu').addEventListener('click', () => renderProcs('cpu'));
 $('#procMem').addEventListener('click', () => renderProcs('mem'));
 $('#rebootBtn').addEventListener('click', confirmReboot);
-$('#goApps').addEventListener('click', () => go('apps'));
 $('#claudeRefresh').addEventListener('click', claudeRefreshStatus);
 $('#claudeList').addEventListener('click', (e) => claudeListSessions(e.currentTarget));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && current !== 'map') load(current); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !(current === 'infra' && infraSeg === 'map')) load(current);
+});
+
+// ── Pull-to-refresh (leve, só quando o scroll está no topo) ──────────────────
+(function pullToRefresh() {
+  const el = $('#ptr');
+  let sy = 0, pulling = false, dist = 0;
+  document.addEventListener('touchstart', (e) => {
+    const mapOpen = current === 'infra' && infraSeg === 'map';
+    if (window.scrollY === 0 && !mapOpen && !$('#sheet').classList.contains('open')) {
+      sy = e.touches[0].clientY; pulling = true; dist = 0;
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    dist = e.touches[0].clientY - sy;
+    if (dist > 12) {
+      el.style.opacity = Math.min(1, dist / 90);
+      el.style.transform = `translateX(-50%) translateY(${Math.min(58, dist / 2.2)}px) rotate(${Math.min(270, dist * 2)}deg)`;
+    }
+  }, { passive: true });
+  document.addEventListener('touchend', async () => {
+    if (!pulling) return;
+    pulling = false;
+    const fire = dist > 76;
+    el.style.opacity = 0; el.style.transform = 'translateX(-50%)';
+    if (fire) { haptic(12); await load(current, { fresh: true }); toast('Atualizado', 'ok'); }
+  });
+})();
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 let SERVER = 'MikeServer';
 (async function init() {
   try { const h = await api('/host'); SERVER = h.server_name; $('#hostSub').textContent = h.os; } catch {}
-  go('map');
+  go('home');
   // badge de alertas críticos no tab
   setInterval(async () => {
     try {
@@ -535,7 +660,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
   if (localStorage.getItem('mc_install_dismissed')) return;
   $('#installBanner').innerHTML = `<div class="install">📲 <div>Instala o MikeCommand no telemóvel</div>
     <button class="btn primary" style="min-height:36px;margin-left:auto" id="installBtn">Instalar</button>
-    <span class="x" id="installX">✕</span></div>`;
+    <button class="x" id="installX" aria-label="Dispensar sugestão de instalação">✕</button></div>`;
   $('#installBtn').onclick = async () => { deferredPrompt.prompt(); deferredPrompt = null; $('#installBanner').innerHTML = ''; };
   $('#installX').onclick = () => { localStorage.setItem('mc_install_dismissed', '1'); $('#installBanner').innerHTML = ''; };
 });
@@ -648,7 +773,7 @@ function tapNode(g) {
   const port = g.getAttribute('data-port'), st = g.getAttribute('data-status');
   const web = g.getAttribute('data-web') === '1';
   let action;
-  if (st !== 'up') action = `<div class="dim" style="font-size:13px">Serviço parado — vai à aba <b>Docker</b> para o reiniciar.</div>`;
+  if (st !== 'up') action = `<button class="btn primary block" onclick="setSeg('docker');go('infra');closeSheet()">Ir a Infra → Docker para reiniciar</button>`;
   else if (web && url) action = `<a class="btn primary block" href="${esc(url)}" target="_blank" rel="noopener">↗ Abrir app</a>`;
   else action = `<div class="dim" style="font-size:13px">Serviço interno (não é uma página web).</div>`;
   openSheet(`<h2>${esc(name)}</h2>
@@ -700,7 +825,7 @@ function tapNode(g) {
 $('#mapZoomIn').addEventListener('click', () => window._mapZoom(1.25));
 $('#mapZoomOut').addEventListener('click', () => window._mapZoom(0.8));
 $('#mapReset').addEventListener('click', () => { mapState.scale = 1; mapState.tx = 0; mapState.ty = 0; applyMapTransform(); });
-let _rsz; window.addEventListener('resize', () => { clearTimeout(_rsz); _rsz = setTimeout(() => { if (current === 'map') renderMapView(); }, 250); });
+let _rsz; window.addEventListener('resize', () => { clearTimeout(_rsz); _rsz = setTimeout(() => { if (current === 'infra' && infraSeg === 'map') renderMapView(); }, 250); });
 
 // ── Service worker ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

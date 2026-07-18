@@ -7,15 +7,13 @@ Não é só leitura — **agir** à distância a partir do telemóvel, via Tails
 - **Stack**: Python 3.12 + FastAPI + PWA vanilla (zero-build) — leve por design para o N97.
 - **Acesso**: privado, só via Tailscale (sem auth, conforme decidido — confia-se na tailnet).
 
-## Secções da app
+## Secções da app (5 destinos por intenção)
 | Aba | O que faz |
 |---|---|
-| **Visão** | CPU, RAM, temperatura, disco (gauges) + load, uptime, rede, por-núcleo, sparklines. |
-| **Docker** | Lista de containers + estado; toca → reiniciar / parar / pausar / arrancar + ver logs. |
-| **Sistema** | Info do host, top processos (CPU/RAM) e **reboot da VM** (com confirmação escrita). |
-| **Comandos** | Allowlist de comandos no host (sync CoreRoom, guardar vault, prune, df…) com output. |
-| **Claude** | Gerir sessões Claude em tmux por projeto (Start/Stop/Restart via `~/bin/mikeclaude`, como utilizador, sem sudo). |
-| **Apps** | Auto-discovery de portas → links Tailscale das apps (CoreRoom, Portainer, Kuma…). |
+| **Home** | Vista por defeito: hero de saúde global, "precisa de atenção", gauges CPU/RAM/disco com sparklines, preview vivo do mapa, uptime/carga/containers/apps. |
+| **Infra** | Segmented control **Docker · Apps · Mapa**: containers (reiniciar / parar / pausar / logs), auto-discovery de portas → links Tailscale, e o mapa orbital do servidor. |
+| **Sistema** | Acordeão: info do host, Tailscale, backups, top processos (CPU/RAM) e **reboot da VM** (com confirmação escrita). |
+| **Automação** | Allowlist de comandos no host (sync CoreRoom, guardar vault, prune, df…) + gestão de sessões Claude em tmux (Start/Stop/Restart via `~/bin/mikeclaude`, sem sudo). |
 | **Alertas** | Limiares + estado do Telegram + teste de push + histórico de alertas. |
 
 ## Notificações push
