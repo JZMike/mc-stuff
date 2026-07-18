@@ -8,13 +8,13 @@ from __future__ import annotations
 import contextlib
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import Body, FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import (
-    actions, alerts, catalog, claude_sessions, config, docker_api, infra, metrics, ports,
-    system, telegram, topology,
+    actions, al_projects, alerts, azdo, catalog, claude_sessions, config, docker_api, infra,
+    metrics, ports, system, telegram, topology,
 )
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -46,6 +46,7 @@ async def health():
         "docker_error": None if docker_ok else docker_api._PROBE_ERROR,
         "host_cmd": actions.host_cmd_available(),
         "telegram": telegram.configured(),
+        "azdo": azdo.configured(),
     }
 
 
@@ -232,6 +233,42 @@ async def api_claude_restart(project: str):
 async def api_claude_rc(project: str):
     """Deep-link Remote Control — assumir a sessão tmux na app do Claude."""
     res = await claude_sessions.remote_control(project)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+# ── Projetos AL / Azure DevOps ───────────────────────────────────────────────
+@app.get("/api/al/repos")
+async def api_al_repos():
+    """Repos do projeto DevOps + estado local de cada clone (al-<repo>)."""
+    return await al_projects.repos()
+
+
+@app.get("/api/al/workitems")
+async def api_al_workitems():
+    return await azdo.list_workitems()
+
+
+@app.post("/api/al/sync/{repo}")
+async def api_al_sync(repo: str):
+    res = await al_projects.sync(repo)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.post("/api/al/session/{repo}/start")
+async def api_al_session_start(repo: str, payload: dict = Body(default={})):
+    wid = payload.get("workitem_id")
+    wid = int(wid) if str(wid or "").isdigit() else None
+    res = await al_projects.start_session(
+        repo,
+        briefing=str(payload.get("briefing") or ""),
+        workitem_id=wid,
+    )
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.post("/api/al/pr/{repo}")
+async def api_al_pr(repo: str, payload: dict = Body(default={})):
+    res = await al_projects.create_pr(repo, title=str(payload.get("title") or ""))
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 

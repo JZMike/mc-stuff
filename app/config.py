@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -181,6 +182,29 @@ def known_apps() -> dict:
     return _DEFAULT_KNOWN_APPS
 
 
+# ── Azure DevOps / Projetos AL ───────────────────────────────────────────────
+# Os clones vivem em CLAUDE_PROJECTS_BASE/al-<repo> para o mikeclaude os gerir
+# como qualquer outro projeto (sessão claude-al-<repo>).
+AZDO_ORG_URL = os.getenv("AZDO_ORG_URL", "").strip().rstrip("/")   # https://dev.azure.com/<org>
+AZDO_PROJECT = os.getenv("AZDO_PROJECT", "").strip()
+AZDO_PAT = os.getenv("AZDO_PAT", "").strip()  # scopes: Code (read/write) + Work Items (read)
+# Tipos de work item a listar como "bugs abertos" (separados por vírgula).
+AZDO_WI_TYPES = [t.strip() for t in os.getenv("AZDO_WI_TYPES", "Bug").split(",") if t.strip()]
+
+# Nome de repo aceitável para usar em paths/argv (defesa em profundidade —
+# a validação principal é contra a lista real de repos da API).
+AL_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$")
+
+
+def al_project_name(repo: str) -> str:
+    """Nome do projeto mikeclaude para um repo AL (espaços → hífens)."""
+    return "al-" + repo.replace(" ", "-")
+
+
+def al_project_dir(repo: str) -> str:
+    return f"{CLAUDE_PROJECTS_BASE}/{al_project_name(repo)}"
+
+
 # ── Sessões Claude (tmux via ~/bin/mikeclaude) ───────────────────────────────
 # O script corre como ESTE utilizador (não root, sem sudo).
 CLAUDE_USER = os.getenv("MIKECLAUDE_USER", "migcarvalho")
@@ -194,11 +218,24 @@ _DEFAULT_CLAUDE_PROJECTS = [
 ]
 
 
+def _discover_al_projects() -> list[str]:
+    """Clones AL no host (al-*) — visíveis via o mount read-only HOST_ROOT."""
+    base = Path(HOST_ROOT) / CLAUDE_PROJECTS_BASE.lstrip("/")
+    try:
+        return sorted(d.name for d in base.iterdir()
+                      if d.name.startswith("al-") and (d / ".git").exists())
+    except OSError:
+        return []
+
+
 def claude_projects() -> list[str]:
     raw = os.getenv("CLAUDE_PROJECTS", "").strip()
-    if raw:
-        return [p.strip() for p in raw.split(",") if p.strip()]
-    return _DEFAULT_CLAUDE_PROJECTS
+    base = [p.strip() for p in raw.split(",") if p.strip()] if raw else list(_DEFAULT_CLAUDE_PROJECTS)
+    # projetos AL entram dinamicamente na whitelist assim que o clone existe
+    for name in _discover_al_projects():
+        if name not in base:
+            base.append(name)
+    return base
 
 
 def claude_project_path(project: str) -> str:

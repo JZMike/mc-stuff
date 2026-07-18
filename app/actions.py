@@ -47,8 +47,12 @@ def _wrap_user(args: list[str]) -> list[str]:
             "bash", "-lc", boot, "_"] + args
 
 
-async def run_as_user(args: list[str], timeout: int = 60) -> dict:
-    """Executa um comando (lista de args, sem shell) como o utilizador."""
+async def run_as_user(args: list[str], timeout: int = 60, env: dict | None = None) -> dict:
+    """Executa um comando (lista de args, sem shell) como o utilizador.
+
+    `env`: variáveis extra (ex.: GIT_CONFIG_* com auth) — vão por ambiente,
+    nunca por argv, para não aparecerem em process listings.
+    """
     if not host_cmd_available():
         return {"ok": False, "rc": -1, "stdout": "", "stderr": "",
                 "error": "Execução no host indisponível (precisa de pid:host + privileged + nsenter)."}
@@ -57,6 +61,7 @@ async def run_as_user(args: list[str], timeout: int = 60) -> dict:
             *_wrap_user(args),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, **env} if env else None,
         )
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return {

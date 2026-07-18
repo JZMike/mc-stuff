@@ -676,7 +676,128 @@ async function renderInfra(opts = {}) {
   }
   if (infraSeg === 'docker') await renderDocker(); else await renderApps();
 }
-async function renderAuto() { await Promise.all([renderCommands(), renderClaude()]); }
+// ── Automação: segmented control (Comandos · Claude · AL) ────────────────────
+let autoSeg = localStorage.getItem('mc_auto_seg') || 'cmd';
+function setAutoSeg(s) { autoSeg = s; localStorage.setItem('mc_auto_seg', s); }
+function applyAutoSeg() {
+  $$('#autoSeg button').forEach(b => {
+    const on = b.dataset.seg === autoSeg;
+    b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on));
+  });
+  $('#autoCmd').hidden = autoSeg !== 'cmd';
+  $('#autoClaude').hidden = autoSeg !== 'claude';
+  $('#autoAL').hidden = autoSeg !== 'al';
+}
+async function renderAuto() {
+  applyAutoSeg();
+  if (autoSeg === 'cmd') await renderCommands();
+  else if (autoSeg === 'claude') await renderClaude();
+  else await renderAL();
+}
+
+// ══ PROJETOS AL (Azure DevOps) ═══════════════════════════════════════════════
+let _alRepos = [], _alWICur = null;
+async function renderAL() {
+  const d = await api('/al/repos');
+  const el = $('#alRepos');
+  if (!d.available) {
+    $('#alHint').innerHTML = `<div class="install" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)">⚠️ ${esc(d.error || 'Azure DevOps não configurado.')}</div>`;
+    el.innerHTML = ''; $('#alWorkitems').innerHTML = '';
+    return;
+  }
+  $('#alHint').innerHTML = '';
+  _alRepos = d.repos;
+  el.innerHTML = d.repos.map(r => {
+    const L = r.local;
+    const pill = !L ? '<span class="pill">não clonado</span>'
+      : L.dirty ? `<span class="pill warn">${L.dirty} alt. locais</span>`
+      : L.ahead ? `<span class="pill warn">${L.ahead} por enviar</span>`
+      : '<span class="pill ok">sincronizado</span>';
+    const meta = L ? `${esc(L.branch || '?')} · ${esc(r.project)}` : `branch ${esc(r.default_branch)}`;
+    return `<div class="item" style="flex-direction:column;align-items:stretch;gap:11px">
+      <div class="row" style="gap:12px"><span class="ico">🧩</span>
+        <div class="grow"><div class="name">${esc(r.name)}</div><div class="meta mono">${meta}</div></div>
+        ${pill}</div>
+      <div class="btn-row">
+        <button class="btn" style="flex:1" onclick="alSync('${esc(r.name)}',this)">⇅ Sync</button>
+        <button class="btn primary" style="flex:1" onclick="alSession('${esc(r.name)}')" ${L ? '' : 'disabled'}>▶ Sessão</button>
+        <button class="btn" style="flex:1" onclick="alPR('${esc(r.name)}',this)" ${L ? '' : 'disabled'}>⇱ PR</button>
+      </div></div>`;
+  }).join('') || emptyState('🧩', 'Sem repos', 'Nenhum repositório no projeto DevOps.');
+  renderALWorkitems();
+  markSync();
+}
+async function renderALWorkitems() {
+  const el = $('#alWorkitems');
+  try {
+    const d = await api('/al/workitems');
+    if (!d.available) { el.innerHTML = emptyState('🐛', 'Work items indisponíveis', esc(d.error || '')); return; }
+    el.innerHTML = d.items.map(w => `<button class="item" onclick='openWorkitem(${JSON.stringify(w).replace(/'/g, "&#39;")})'>
+      <span class="ico">🐛</span>
+      <div class="grow"><div class="name" style="font-size:13.5px">#${w.id} ${esc(w.title)}</div>
+        <div class="meta">${esc(w.state)}${w.assigned ? ' · ' + esc(w.assigned) : ''}</div></div>
+      <span class="chev">›</span></button>`).join('')
+      || emptyState('✅', 'Sem bugs abertos', 'Nada pendente no DevOps.');
+  } catch (e) { el.innerHTML = emptyState('⚠️', 'Work items indisponíveis', esc(e.message)); }
+}
+window.alSync = async function (name, btn) {
+  btn.disabled = true; const old = btn.textContent; btn.textContent = 'a sincronizar…';
+  try { const r = await api(`/al/sync/${encodeURIComponent(name)}`, { method: 'POST' }); toast(r.message || 'Sincronizado', 'ok'); }
+  catch (e) { toast(e.message, 'err'); }
+  btn.disabled = false; btn.textContent = old;
+  renderAL();
+};
+window.alSession = function (name, briefing = '', wiId = null) {
+  _alWICur = wiId;
+  openSheet(`<h2>▶ Sessão sobre ${esc(name)}</h2>
+    <div class="muted" style="font-size:13px;margin:6px 0 10px">Descreve o erro ou a tarefa — vai para o <b class="mono">TASK.md</b> do clone e a sessão Claude começa por aí.</div>
+    <textarea id="alBriefing" class="logbox" style="width:100%;min-height:130px;font-size:14px;font-family:inherit" placeholder="Ex.: Ao lançar a fatura de venda X aparece o erro Y no posting…">${esc(briefing)}</textarea>
+    <button class="btn primary block" style="margin-top:12px" onclick="alStart('${esc(name)}',this)">Iniciar sessão claude-al-${esc(name)}</button>`);
+  $('#alBriefing').focus();
+};
+window.alStart = async function (name, btn) {
+  const briefing = $('#alBriefing').value.trim();
+  if (!briefing) { toast('Escreve o briefing primeiro', 'err'); return; }
+  btn.disabled = true; btn.textContent = 'a iniciar…';
+  try {
+    const r = await api(`/al/session/${encodeURIComponent(name)}/start`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ briefing, workitem_id: _alWICur }),
+    });
+    toast(r.message || 'Sessão iniciada', 'ok'); closeSheet(); _alWICur = null;
+    setAutoSeg('claude'); load('auto');
+  } catch (e) { toast(e.message, 'err'); btn.disabled = false; btn.textContent = 'Iniciar sessão'; }
+};
+window.alPR = async function (name, btn) {
+  btn.disabled = true; const old = btn.textContent; btn.textContent = 'a criar PR…';
+  try {
+    const r = await api(`/al/pr/${encodeURIComponent(name)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    openSheet(`<h2>⇱ Pull Request criado</h2>
+      <div class="muted" style="font-size:13px;margin:6px 0 14px">PR #${r.id} no Azure DevOps — revê e faz merge no browser ou no VS Code.</div>
+      <a class="btn primary block" href="${esc(r.url)}" target="_blank" rel="noopener">↗ Abrir PR no DevOps</a>`);
+  } catch (e) { toast(e.message, 'err'); }
+  btn.disabled = false; btn.textContent = old;
+};
+window.openWorkitem = function (w) {
+  const repoOpts = _alRepos.filter(r => r.local).map(r => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('');
+  const desc = (w.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  openSheet(`<h2>🐛 #${w.id} ${esc(w.title)}</h2>
+    <div class="row" style="gap:8px;margin:6px 0 12px"><span class="pill warn">${esc(w.state)}</span>
+      ${w.assigned ? `<span class="dim" style="font-size:12px">${esc(w.assigned)}</span>` : ''}</div>
+    ${desc ? `<div class="logbox" style="max-height:26vh;margin-bottom:12px">${esc(desc.slice(0, 1800))}</div>` : ''}
+    <a class="btn block" href="${esc(w.url)}" target="_blank" rel="noopener" style="margin-bottom:10px">↗ Abrir no DevOps</a>
+    ${repoOpts ? `<div class="dim" style="font-size:12.5px;margin:8px 0 6px">Iniciar sessão Claude no repo:</div>
+      <select id="alWIRepo" class="logbox" style="width:100%;font-size:14px;padding:11px">${repoOpts}</select>
+      <button class="btn primary block" style="margin-top:10px" onclick='alFromWI(${JSON.stringify(w).replace(/'/g, "&#39;")})'>▶ Sessão com este contexto</button>`
+      : `<div class="dim" style="font-size:12.5px">Faz Sync de um repo primeiro para poderes iniciar uma sessão.</div>`}`);
+};
+window.alFromWI = function (w) {
+  const repo = $('#alWIRepo').value;
+  const desc = (w.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  alSession(repo, `Work item #${w.id}: ${w.title}${desc ? '\n\n' + desc.slice(0, 1200) : ''}`, w.id);
+};
 
 // ── Router + polling ─────────────────────────────────────────────────────────
 const RENDER = { home: renderHome, infra: renderInfra, system: renderSystem, auto: renderAuto, alerts: renderAlerts };
@@ -686,7 +807,9 @@ let current = 'home', pollT = null;
 const VIEW_ERR = {
   home: () => '#heroHealth',
   infra: () => infraSeg === 'apps' ? '#appList' : '#containerList',
-  system: () => '#hostCard', auto: () => '#cmdList', alerts: () => '#alertConfig',
+  system: () => '#hostCard',
+  auto: () => autoSeg === 'al' ? '#alRepos' : autoSeg === 'claude' ? '#claudeProjects' : '#cmdList',
+  alerts: () => '#alertConfig',
 };
 async function load(view, opts) {
   try { await RENDER[view](opts || {}); setStatus(true); }
@@ -724,6 +847,7 @@ function go(view) {
 }
 $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
 $$('#infraSeg button').forEach(b => b.addEventListener('click', () => { setSeg(b.dataset.seg); load('infra', { fresh: true }); schedule(); }));
+$$('#autoSeg button').forEach(b => b.addEventListener('click', () => { setAutoSeg(b.dataset.seg); load('auto', { fresh: true }); }));
 $('#procCpu').addEventListener('click', () => renderProcs('cpu'));
 $('#procMem').addEventListener('click', () => renderProcs('mem'));
 $('#rebootBtn').addEventListener('click', confirmReboot);
@@ -776,11 +900,13 @@ async function openPalette() {
     { t: 'Alertas', k: 'vista', icon: '🔔', run: () => go('alerts') },
   ];
   drawPal('');
-  const [cs, ap, cm, cl] = await Promise.all([
+  const [cs, ap, cm, cl, alr, alw] = await Promise.all([
     _aux.containers ? Promise.resolve(_aux.containers) : api('/containers').catch(() => null),
     _aux.apps ? Promise.resolve(_aux.apps) : api('/apps').catch(() => null),
     api('/commands').catch(() => null),
     api('/claude/projects').catch(() => null),
+    api('/al/repos').catch(() => null),
+    api('/al/workitems').catch(() => null),
   ]);
   palIndex.push(
     ...((cs && cs.containers) || []).map(ct => ({
@@ -795,7 +921,14 @@ async function openPalette() {
       t: c.label, k: 'comando', icon: c.danger ? '⚠️' : '⚡', run: () => go('auto'),
     })),
     ...((cl && cl.projects) || []).map(p => ({
-      t: 'claude-' + p.name, k: 'sessão', icon: '✳️', run: () => go('auto'),
+      t: 'claude-' + p.name, k: 'sessão', icon: '✳️', run: () => { setAutoSeg('claude'); go('auto'); },
+    })),
+    ...((alr && alr.available && alr.repos) || []).map(r => ({
+      t: r.name, k: 'repo AL', icon: '🧩', run: () => { setAutoSeg('al'); go('auto'); },
+    })),
+    ...((alw && alw.available && alw.items) || []).map(w => ({
+      t: `#${w.id} ${w.title}`, k: 'bug DevOps', icon: '🐛',
+      run: () => { setAutoSeg('al'); go('auto'); openWorkitem(w); },
     })),
   );
   if (!$('#palette').hidden) drawPal(inp.value);

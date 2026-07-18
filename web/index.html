@@ -112,18 +112,32 @@
       </details>
     </section>
 
-    <!-- ░░ AUTOMAÇÃO (Comandos + Sessões Claude) ░░ -->
+    <!-- ░░ AUTOMAÇÃO (Comandos · Claude · AL) ░░ -->
     <section class="view" id="view-auto" role="tabpanel" aria-label="Automação">
-      <div class="view-title">Comandos rápidos</div>
-      <div id="cmdHint"></div>
-      <div class="list" id="cmdList"><div class="skeleton" style="height:60px"></div></div>
-      <div class="view-title" style="margin-top:22px">Sessões Claude (tmux)</div>
-      <div class="btn-row" style="margin-bottom:14px">
-        <button class="btn" id="claudeRefresh" style="flex:1">↻ Atualizar estados</button>
-        <button class="btn" id="claudeList" style="flex:1">📋 Sessões ativas</button>
+      <div class="seg" id="autoSeg" role="tablist" aria-label="Secções de automação">
+        <button data-seg="cmd" role="tab" aria-selected="true">Comandos</button>
+        <button data-seg="claude" role="tab" aria-selected="false">Claude</button>
+        <button data-seg="al" role="tab" aria-selected="false">AL</button>
       </div>
-      <div id="claudeListOut"></div>
-      <div class="list" id="claudeProjects"><div class="skeleton" style="height:84px"></div></div>
+      <div id="autoCmd">
+        <div id="cmdHint"></div>
+        <div class="list" id="cmdList"><div class="skeleton" style="height:60px"></div></div>
+      </div>
+      <div id="autoClaude" hidden>
+        <div class="btn-row" style="margin-bottom:14px">
+          <button class="btn" id="claudeRefresh" style="flex:1">↻ Atualizar estados</button>
+          <button class="btn" id="claudeList" style="flex:1">📋 Sessões ativas</button>
+        </div>
+        <div id="claudeListOut"></div>
+        <div class="list" id="claudeProjects"><div class="skeleton" style="height:84px"></div></div>
+      </div>
+      <div id="autoAL" hidden>
+        <div id="alHint"></div>
+        <div class="view-title">Repos Azure DevOps</div>
+        <div class="list" id="alRepos"><div class="skeleton" style="height:60px"></div></div>
+        <div class="view-title" style="margin-top:18px">Bugs abertos</div>
+        <div class="list" id="alWorkitems"></div>
+      </div>
     </section>
 
     <!-- ░░ ALERTAS ░░ -->
