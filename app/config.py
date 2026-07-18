@@ -90,6 +90,21 @@ _DEFAULT_COMMANDS = [
         "danger": False,
     },
     {
+        "id": "cockpit-update",
+        "label": "Atualizar MikeCockpit",
+        "desc": "git pull + deploy da última versão do main — a app reinicia (~1 min)",
+        # systemd-run lança o deploy numa unidade transiente do HOST: sobrevive ao
+        # restart do próprio container (via nsenter, o processo ficaria no cgroup
+        # do container e morreria a meio do docker compose up).
+        "cmd": ("cd /opt/projects/mikecockpit"
+                " && git -c safe.directory=/opt/projects/mikecockpit pull --ff-only"
+                " && systemd-run --collect --unit=mikecockpit-deploy-$(date +%s)"
+                " /opt/projects/mikecockpit/deploy.sh"
+                " && echo 'Deploy lançado em background — a app reinicia daqui a ~1 min."
+                " Recarrega a página depois. Log: journalctl -u mikecockpit-deploy-*'"),
+        "danger": True,
+    },
+    {
         "id": "docker-prune",
         "label": "Limpar Docker (prune)",
         "desc": "Remove imagens/containers/redes não usadas",
