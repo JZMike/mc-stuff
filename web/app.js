@@ -705,7 +705,8 @@ async function renderAL() {
     el.innerHTML = ''; $('#alWorkitems').innerHTML = '';
     return;
   }
-  $('#alHint').innerHTML = '';
+  $('#alHint').innerHTML = (d.cred_source && d.cred_source !== '.env')
+    ? `<div class="dim" style="font-size:12px;margin:0 2px 10px">🔑 credenciais DevOps: <span class="mono">${esc(d.cred_source)}</span></div>` : '';
   _alRepos = d.repos;
   el.innerHTML = d.repos.map(r => {
     const L = r.local;

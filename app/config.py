@@ -191,6 +191,100 @@ AZDO_PAT = os.getenv("AZDO_PAT", "").strip()  # scopes: Code (read/write) + Work
 # Tipos de work item a listar como "bugs abertos" (separados por vírgula).
 AZDO_WI_TYPES = [t.strip() for t in os.getenv("AZDO_WI_TYPES", "Bug").split(",") if t.strip()]
 
+# Fallback: sem AZDO_* no .env próprio, ler as credenciais DevOps do .env de
+# outro projeto no host (default: coreroom), via o mount read-only HOST_ROOT.
+# O PAT nunca é copiado — é lido on-demand e apanha rotações automaticamente.
+AZDO_ENV_FALLBACK = os.getenv("AZDO_ENV_FALLBACK", "/opt/projects/coreroom/.env").strip()
+
+_AZDO_PAT_KEYS = ("AZDO_PAT", "AZURE_DEVOPS_PAT", "AZURE_DEVOPS_EXT_PAT", "ADO_PAT",
+                  "DEVOPS_PAT", "AZDO_TOKEN", "AZURE_DEVOPS_TOKEN", "PAT")
+_AZDO_ORG_KEYS = ("AZDO_ORG_URL", "AZDO_ORG", "AZURE_DEVOPS_ORG_URL", "AZURE_DEVOPS_ORG",
+                  "ADO_ORG", "DEVOPS_ORG_URL", "DEVOPS_ORG")
+_AZDO_PROJ_KEYS = ("AZDO_PROJECT", "AZURE_DEVOPS_PROJECT", "ADO_PROJECT", "DEVOPS_PROJECT")
+_AZDO_URL_RE = re.compile(
+    r"https://(?:[\w.-]+@)?dev\.azure\.com/([\w.-]+)/([^/\s\"']+)|https://([\w-]+)\.visualstudio\.com/([^/\s\"']+)")
+
+_azdo_fb_cache: dict = {"mtime": None, "vals": {}}
+
+
+def _parse_env_file(path: Path) -> dict:
+    out = {}
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.removeprefix("export ").strip()
+            v = v.strip().strip('"').strip("'")
+            if k and v:
+                out[k] = v
+    except OSError:
+        pass
+    return out
+
+
+def _azdo_fallback() -> dict:
+    """Credenciais DevOps extraídas do .env de outro projeto (ex.: coreroom)."""
+    if not AZDO_ENV_FALLBACK:
+        return {}
+    p = Path(HOST_ROOT) / AZDO_ENV_FALLBACK.lstrip("/")
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        return {}
+    if _azdo_fb_cache["mtime"] == mtime:
+        return _azdo_fb_cache["vals"]
+    env = _parse_env_file(p)
+    vals: dict = {}
+    for k in _AZDO_PAT_KEYS:
+        if env.get(k):
+            vals["pat"] = env[k]
+            break
+    for k in _AZDO_ORG_KEYS:
+        if env.get(k):
+            v = env[k].rstrip("/")
+            vals["org_url"] = v if v.startswith("http") else f"https://dev.azure.com/{v}"
+            break
+    for k in _AZDO_PROJ_KEYS:
+        if env.get(k):
+            vals["project"] = env[k]
+            break
+    # último recurso: org/projeto embebidos numa URL DevOps em qualquer valor
+    if "org_url" not in vals or "project" not in vals:
+        for v in env.values():
+            m = _AZDO_URL_RE.search(v)
+            if m:
+                org = m.group(1) or m.group(3)
+                proj = m.group(2) or m.group(4)
+                vals.setdefault("org_url", f"https://dev.azure.com/{org}")
+                if proj and proj != "_git":
+                    vals.setdefault("project", proj)
+                break
+    _azdo_fb_cache.update(mtime=mtime, vals=vals)
+    return vals
+
+
+def azdo_org_url() -> str:
+    return AZDO_ORG_URL or _azdo_fallback().get("org_url", "")
+
+
+def azdo_project() -> str:
+    return AZDO_PROJECT or _azdo_fallback().get("project", "")
+
+
+def azdo_pat() -> str:
+    return AZDO_PAT or _azdo_fallback().get("pat", "")
+
+
+def azdo_cred_source() -> str:
+    """De onde vêm as credenciais (para a UI) — nunca expõe valores."""
+    if AZDO_PAT:
+        return ".env"
+    if _azdo_fallback().get("pat"):
+        return AZDO_ENV_FALLBACK
+    return ""
+
 # Nome de repo aceitável para usar em paths/argv (defesa em profundidade —
 # a validação principal é contra a lista real de repos da API).
 AL_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$")

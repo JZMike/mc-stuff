@@ -94,7 +94,7 @@ async def repos() -> dict:
         local = await _local_state(r["name"])
         out.append({**r, "remote_url": None, "local": local,
                     "project": config.al_project_name(r["name"])})
-    return {"available": True, "repos": out}
+    return {"available": True, "repos": out, "cred_source": config.azdo_cred_source()}
 
 
 _CLAUDE_MD = """# {project} — projeto AL sincronizado do Azure DevOps

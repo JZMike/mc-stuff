@@ -30,8 +30,10 @@ Trabalhar os projetos AL (Business Central) a partir do telemóvel, com o PC des
    ou no browser antes do merge.
 
 Config no `.env`: `AZDO_ORG_URL` (https://dev.azure.com/&lt;org&gt;), `AZDO_PROJECT`,
-`AZDO_PAT` (scopes: **Code Read & Write** + **Work Items Read**). Os bugs abertos do projeto
-aparecem na secção AL e na command palette.
+`AZDO_PAT` (scopes: **Code Read & Write** + **Work Items Read**). Sem `AZDO_*` no `.env`,
+o cockpit lê as credenciais do `.env` do **coreroom** (`AZDO_ENV_FALLBACK`, via o mount
+read-only do host) — sem copiar o PAT, e rotações são apanhadas automaticamente.
+Os bugs abertos do projeto aparecem na secção AL e na command palette.
 
 ## Notificações push
 Alertas via **Telegram** quando CPU/RAM/disco/temperatura passam o limiar de forma sustentada,

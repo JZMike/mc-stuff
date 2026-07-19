@@ -7,6 +7,7 @@ logs nem URLs devolvidas ao cliente.
 from __future__ import annotations
 
 import base64
+from urllib.parse import quote
 
 import httpx
 
@@ -16,16 +17,20 @@ _API = {"api-version": "7.1"}
 
 
 def configured() -> bool:
-    return bool(config.AZDO_ORG_URL and config.AZDO_PROJECT and config.AZDO_PAT)
+    return bool(config.azdo_org_url() and config.azdo_project() and config.azdo_pat())
 
 
 def auth_header() -> str:
-    return "Basic " + base64.b64encode(f":{config.AZDO_PAT}".encode()).decode()
+    return "Basic " + base64.b64encode(f":{config.azdo_pat()}".encode()).decode()
+
+
+def _base() -> str:
+    return f"{config.azdo_org_url()}/{quote(config.azdo_project(), safe='')}"
 
 
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        base_url=f"{config.AZDO_ORG_URL}/{config.AZDO_PROJECT}",
+        base_url=_base(),
         headers={"Authorization": auth_header(), "Accept": "application/json"},
         timeout=20.0,
     )
@@ -42,13 +47,15 @@ def _err(e: Exception) -> str:
     return str(e)
 
 
-_NOT_CONFIGURED = {"available": False,
-                   "error": "Azure DevOps não configurado (AZDO_ORG_URL / AZDO_PROJECT / AZDO_PAT no .env)."}
+def _not_configured() -> dict:
+    hint = f" nem em {config.AZDO_ENV_FALLBACK}" if config.AZDO_ENV_FALLBACK else ""
+    return {"available": False,
+            "error": f"Azure DevOps não configurado — sem AZDO_ORG_URL/AZDO_PROJECT/AZDO_PAT no .env{hint}."}
 
 
 async def list_repos() -> dict:
     if not configured():
-        return dict(_NOT_CONFIGURED)
+        return _not_configured()
     try:
         async with _client() as c:
             r = await c.get("/_apis/git/repositories", params=_API)
@@ -87,7 +94,7 @@ _WI_FIELDS = ("System.Title,System.State,System.WorkItemType,System.AssignedTo,"
 
 
 def _wi_url(wid: int) -> str:
-    return f"{config.AZDO_ORG_URL}/{config.AZDO_PROJECT}/_workitems/edit/{wid}"
+    return f"{_base()}/_workitems/edit/{wid}"
 
 
 def _wi_item(w: dict) -> dict:
@@ -106,7 +113,7 @@ def _wi_item(w: dict) -> dict:
 
 async def list_workitems(limit: int = 25) -> dict:
     if not configured():
-        return dict(_NOT_CONFIGURED)
+        return _not_configured()
     try:
         async with _client() as c:
             r = await c.post("/_apis/wit/wiql", params=_API, json={"query": _wiql()})
@@ -138,7 +145,7 @@ async def get_workitem(wid: int) -> dict | None:
 async def create_pr(repo: str, source_branch: str, target_branch: str,
                     title: str, description: str = "") -> dict:
     if not configured():
-        return {"ok": False, "error": _NOT_CONFIGURED["error"]}
+        return {"ok": False, "error": _not_configured()["error"]}
     payload = {
         "sourceRefName": f"refs/heads/{source_branch}",
         "targetRefName": f"refs/heads/{target_branch}",
@@ -156,4 +163,4 @@ async def create_pr(repo: str, source_branch: str, target_branch: str,
         return {"ok": False, "error": _err(e)}
     pr_id = pr.get("pullRequestId")
     return {"ok": True, "id": pr_id,
-            "url": f"{config.AZDO_ORG_URL}/{config.AZDO_PROJECT}/_git/{repo}/pullrequest/{pr_id}"}
+            "url": f"{_base()}/_git/{quote(repo, safe='')}/pullrequest/{pr_id}"}
