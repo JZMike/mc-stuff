@@ -1,5 +1,5 @@
 /* MikeCockpit SW — network-first p/ a shell, nunca cacheia /api (dados sempre frescos). */
-const CACHE = 'mikecockpit-v11';
+const CACHE = 'mikecockpit-v12';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-maskable.svg', 'fonts/inter-latin.woff2'];
 

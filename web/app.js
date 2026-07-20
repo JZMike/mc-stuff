@@ -697,16 +697,40 @@ async function renderAuto() {
 
 // ══ PROJETOS AL (Azure DevOps) ═══════════════════════════════════════════════
 let _alRepos = [], _alWICur = null;
+let alProject = localStorage.getItem('mc_al_project') || '';
+const alQ = () => alProject ? `?project=${encodeURIComponent(alProject)}` : '';
+function drawAlProjSel(projects, active) {
+  $('#alProjSel').innerHTML = projects.length > 1
+    ? `<select id="alProjPick" class="logbox" style="width:100%;font-size:14px;padding:11px;margin-bottom:12px" aria-label="Projeto Azure DevOps">
+        ${projects.map(p => `<option value="${esc(p)}" ${p === active ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+      </select>` : '';
+  const pick = $('#alProjPick');
+  if (pick) pick.addEventListener('change', () => {
+    alProject = pick.value; localStorage.setItem('mc_al_project', alProject);
+    $('#alRepos').innerHTML = '<div class="skeleton" style="height:60px"></div>';
+    $('#alWorkitems').innerHTML = '';
+    renderAL();
+  });
+}
 async function renderAL() {
-  const d = await api('/al/repos');
+  // 1) projetos visíveis ao PAT → seletor; 2) repos + bugs do projeto ativo
+  const pj = await api('/al/projects');
+  if (!pj.available) {
+    $('#alHint').innerHTML = `<div class="install" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)">⚠️ ${esc(pj.error || 'Azure DevOps não configurado.')}</div>`;
+    $('#alProjSel').innerHTML = ''; $('#alRepos').innerHTML = ''; $('#alWorkitems').innerHTML = '';
+    return;
+  }
+  if (!pj.projects.includes(alProject)) alProject = pj.default || pj.projects[0] || '';
+  drawAlProjSel(pj.projects, alProject);
+  const d = await api('/al/repos' + alQ());
   const el = $('#alRepos');
   if (!d.available) {
-    $('#alHint').innerHTML = `<div class="install" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)">⚠️ ${esc(d.error || 'Azure DevOps não configurado.')}</div>`;
+    $('#alHint').innerHTML = `<div class="install" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)">⚠️ ${esc(d.error)}</div>`;
     el.innerHTML = ''; $('#alWorkitems').innerHTML = '';
     return;
   }
-  $('#alHint').innerHTML = (d.cred_source && d.cred_source !== '.env')
-    ? `<div class="dim" style="font-size:12px;margin:0 2px 10px">🔑 credenciais DevOps: <span class="mono">${esc(d.cred_source)}</span></div>` : '';
+  $('#alHint').innerHTML = (pj.cred_source && pj.cred_source !== '.env')
+    ? `<div class="dim" style="font-size:12px;margin:0 2px 10px">🔑 credenciais DevOps: <span class="mono">${esc(pj.cred_source)}</span></div>` : '';
   _alRepos = d.repos;
   el.innerHTML = d.repos.map(r => {
     const L = r.local;
@@ -731,7 +755,7 @@ async function renderAL() {
 async function renderALWorkitems() {
   const el = $('#alWorkitems');
   try {
-    const d = await api('/al/workitems');
+    const d = await api('/al/workitems' + alQ());
     if (!d.available) { el.innerHTML = emptyState('🐛', 'Work items indisponíveis', esc(d.error || '')); return; }
     el.innerHTML = d.items.map(w => `<button class="item" onclick='openWorkitem(${JSON.stringify(w).replace(/'/g, "&#39;")})'>
       <span class="ico">🐛</span>
@@ -743,7 +767,7 @@ async function renderALWorkitems() {
 }
 window.alSync = async function (name, btn) {
   btn.disabled = true; const old = btn.textContent; btn.textContent = 'a sincronizar…';
-  try { const r = await api(`/al/sync/${encodeURIComponent(name)}`, { method: 'POST' }); toast(r.message || 'Sincronizado', 'ok'); }
+  try { const r = await api(`/al/sync/${encodeURIComponent(name)}${alQ()}`, { method: 'POST' }); toast(r.message || 'Sincronizado', 'ok'); }
   catch (e) { toast(e.message, 'err'); }
   btn.disabled = false; btn.textContent = old;
   renderAL();
@@ -761,7 +785,7 @@ window.alStart = async function (name, btn) {
   if (!briefing) { toast('Escreve o briefing primeiro', 'err'); return; }
   btn.disabled = true; btn.textContent = 'a iniciar…';
   try {
-    const r = await api(`/al/session/${encodeURIComponent(name)}/start`, {
+    const r = await api(`/al/session/${encodeURIComponent(name)}/start${alQ()}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ briefing, workitem_id: _alWICur }),
     });
@@ -772,7 +796,7 @@ window.alStart = async function (name, btn) {
 window.alPR = async function (name, btn) {
   btn.disabled = true; const old = btn.textContent; btn.textContent = 'a criar PR…';
   try {
-    const r = await api(`/al/pr/${encodeURIComponent(name)}`, {
+    const r = await api(`/al/pr/${encodeURIComponent(name)}${alQ()}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     openSheet(`<h2>⇱ Pull Request criado</h2>

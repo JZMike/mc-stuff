@@ -286,13 +286,21 @@ def azdo_cred_source() -> str:
     return ""
 
 # Nome de repo aceitável para usar em paths/argv (defesa em profundidade —
-# a validação principal é contra a lista real de repos da API).
-AL_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$")
+# a validação principal é contra a lista real de repos da API). Permissivo com
+# acentos/espaços (ex.: "Plásticos Futura"), mas nunca separadores de path.
+AL_REPO_RE = re.compile(r"^(?![.\-])[^/\\\x00-\x1f]{1,64}$")
 
 
 def al_project_name(repo: str) -> str:
-    """Nome do projeto mikeclaude para um repo AL (espaços → hífens)."""
-    return "al-" + repo.replace(" ", "-")
+    """Nome do projeto mikeclaude para um repo AL — slug seguro para tmux/paths.
+
+    "Plásticos Futura" -> "al-Plasticos-Futura".
+    """
+    import unicodedata
+    s = unicodedata.normalize("NFKD", repo)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-.")
+    return "al-" + (s or "repo")
 
 
 def al_project_dir(repo: str) -> str:

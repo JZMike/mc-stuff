@@ -237,38 +237,46 @@ async def api_claude_rc(project: str):
 
 
 # ── Projetos AL / Azure DevOps ───────────────────────────────────────────────
+@app.get("/api/al/projects")
+async def api_al_projects():
+    """Projetos DevOps visíveis ao PAT (para o seletor da UI)."""
+    return await azdo.list_projects()
+
+
 @app.get("/api/al/repos")
-async def api_al_repos():
+async def api_al_repos(project: str = Query("")):
     """Repos do projeto DevOps + estado local de cada clone (al-<repo>)."""
-    return await al_projects.repos()
+    return await al_projects.repos(project or None)
 
 
 @app.get("/api/al/workitems")
-async def api_al_workitems():
-    return await azdo.list_workitems()
+async def api_al_workitems(project: str = Query("")):
+    return await azdo.list_workitems(project or None)
 
 
 @app.post("/api/al/sync/{repo}")
-async def api_al_sync(repo: str):
-    res = await al_projects.sync(repo)
+async def api_al_sync(repo: str, project: str = Query("")):
+    res = await al_projects.sync(repo, project or None)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 
 @app.post("/api/al/session/{repo}/start")
-async def api_al_session_start(repo: str, payload: dict = Body(default={})):
+async def api_al_session_start(repo: str, project: str = Query(""), payload: dict = Body(default={})):
     wid = payload.get("workitem_id")
     wid = int(wid) if str(wid or "").isdigit() else None
     res = await al_projects.start_session(
         repo,
         briefing=str(payload.get("briefing") or ""),
         workitem_id=wid,
+        project=project or None,
     )
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 
 @app.post("/api/al/pr/{repo}")
-async def api_al_pr(repo: str, payload: dict = Body(default={})):
-    res = await al_projects.create_pr(repo, title=str(payload.get("title") or ""))
+async def api_al_pr(repo: str, project: str = Query(""), payload: dict = Body(default={})):
+    res = await al_projects.create_pr(repo, title=str(payload.get("title") or ""),
+                                      project=project or None)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 

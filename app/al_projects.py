@@ -43,11 +43,11 @@ def _cloned(repo: str) -> bool:
     return (_host_path(config.al_project_dir(repo)) / ".git").exists()
 
 
-async def _find_repo(repo: str) -> tuple[dict | None, str | None]:
+async def _find_repo(repo: str, project: str | None = None) -> tuple[dict | None, str | None]:
     """Valida o nome contra a lista real do DevOps. Devolve (entry, erro)."""
     if not config.AL_REPO_RE.match(repo or ""):
         return None, "nome de repo inválido"
-    rd = await azdo.list_repos()
+    rd = await azdo.list_repos(project)
     if not rd.get("available"):
         return None, rd.get("error", "DevOps indisponível")
     for r in rd["repos"]:
@@ -85,8 +85,8 @@ async def _local_state(repo: str) -> dict | None:
     return state
 
 
-async def repos() -> dict:
-    rd = await azdo.list_repos()
+async def repos(project: str | None = None) -> dict:
+    rd = await azdo.list_repos(project)
     if not rd.get("available"):
         return rd
     out = []
@@ -94,7 +94,8 @@ async def repos() -> dict:
         local = await _local_state(r["name"])
         out.append({**r, "remote_url": None, "local": local,
                     "project": config.al_project_name(r["name"])})
-    return {"available": True, "repos": out, "cred_source": config.azdo_cred_source()}
+    return {"available": True, "repos": out, "cred_source": config.azdo_cred_source(),
+            "project_name": rd.get("project_name")}
 
 
 _CLAUDE_MD = """# {project} — projeto AL sincronizado do Azure DevOps
@@ -127,8 +128,8 @@ async def _write_file(repo: str, filename: str, content: str) -> dict:
         timeout=20)
 
 
-async def sync(repo: str) -> dict:
-    entry, err = await _find_repo(repo)
+async def sync(repo: str, project: str | None = None) -> dict:
+    entry, err = await _find_repo(repo, project)
     if err:
         return {"ok": False, "error": err}
     target = config.al_project_dir(repo)
@@ -163,8 +164,9 @@ async def sync(repo: str) -> dict:
             "message": f"{repo}: {action} concluído.", "detail": out}
 
 
-async def start_session(repo: str, briefing: str, workitem_id: int | None = None) -> dict:
-    entry, err = await _find_repo(repo)
+async def start_session(repo: str, briefing: str, workitem_id: int | None = None,
+                        project: str | None = None) -> dict:
+    entry, err = await _find_repo(repo, project)
     if err:
         return {"ok": False, "error": err}
     if not _cloned(repo):
@@ -175,7 +177,7 @@ async def start_session(repo: str, briefing: str, workitem_id: int | None = None
 
     parts = [f"# Briefing — {time.strftime('%Y-%m-%d %H:%M')}", ""]
     if workitem_id:
-        wi = await azdo.get_workitem(workitem_id)
+        wi = await azdo.get_workitem(workitem_id, project)
         if wi:
             desc = re.sub(r"<[^>]+>", " ", wi.get("description") or "").strip()
             parts += [f"## Work item #{wi['id']} — {wi['title']}",
@@ -199,8 +201,8 @@ async def start_session(repo: str, briefing: str, workitem_id: int | None = None
             "message": f"Sessão claude-{project} iniciada com o briefing no TASK.md."}
 
 
-async def create_pr(repo: str, title: str = "") -> dict:
-    entry, err = await _find_repo(repo)
+async def create_pr(repo: str, title: str = "", project: str | None = None) -> dict:
+    entry, err = await _find_repo(repo, project)
     if err:
         return {"ok": False, "error": err}
     state = await _local_state(repo)
@@ -223,7 +225,8 @@ async def create_pr(repo: str, title: str = "") -> dict:
         last = await actions.run_as_user(["git", "-C", target, "log", "-1", "--pretty=%s"], timeout=15)
         title = (last.get("stdout") or "").strip() or f"Fix via MikeCockpit ({branch})"
     res = await azdo.create_pr(repo, branch, entry["default_branch"], title,
-                               description=f"PR criado a partir do MikeCockpit (branch `{branch}`).")
+                               description=f"PR criado a partir do MikeCockpit (branch `{branch}`).",
+                               project=project)
     if res.get("ok"):
         log.info("al pr %s %s -> #%s", repo, branch, res.get("id"))
     return res
